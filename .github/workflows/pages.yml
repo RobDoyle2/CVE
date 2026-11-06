@@ -1,0 +1,74 @@
+name: Publish site with NVD feed
+
+# Builds the static site, fetches recent CVE changes from the NIST NVD API 2.0,
+# and deploys both to GitHub Pages. The browser app then reads the feed from
+# its own origin (no CORS/CSP changes, no API key in the browser).
+#
+# One-off setup (repository Settings):
+#   Pages  -> Build and deployment -> Source: "GitHub Actions"
+#   Secrets and variables -> Actions -> New repository secret: NVD_API_KEY (optional,
+#     free from https://nvd.nist.gov/developers/request-an-api-key; raises the rate limit)
+#   Variables (optional): NVD_RETENTION_DAYS (default 7)
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '23 */6 * * *'   # every 6 hours (UTC); scheduled runs use the default branch
+  workflow_dispatch:
+    inputs:
+      retention_days:
+        description: 'Days of NVD changes to publish (1-120)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Assemble site
+        run: |
+          mkdir -p _site
+          cp -r index.html .nojekyll css js assets data _site/
+
+      - name: Fetch NVD feed
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+          NVD_RETENTION_DAYS: ${{ github.event.inputs.retention_days || vars.NVD_RETENTION_DAYS || '7' }}
+        # A failure stops the job, so the previously deployed site and feed stay live.
+        run: node scripts/fetch-nvd.mjs --out _site/feeds/nvd
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

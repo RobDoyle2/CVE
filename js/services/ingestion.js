@@ -12,6 +12,7 @@ import { validateRecord } from './validation.js';
 import { severityFromScore } from '../models/lookups.js';
 import { describeExpression } from './version.js';
 import { normaliseName, assessCve } from './assessment-engine.js';
+import { selectMetric, productsFromConfigurations, productsFromAffected, joinWithin } from './nvd-feed.js';
 
 const KEV = 'Known exploited (CISA KEV)';
 const EXPLOIT_RANK = { Unknown: 0, 'Not known to be exploited': 1, 'Exploitation reported': 2, [KEV]: 3 };
@@ -22,58 +23,50 @@ function titleFrom(description) {
   return first.length > 150 ? `${first.slice(0, 147)}…` : first;
 }
 
-function cpeParts(criteria) {
-  const p = String(criteria || '').split(':');
-  if (p.length < 6) return null;
-  const clean = (s) => s.replace(/\\(.)/g, '$1').replace(/_/g, ' ');
-  return { vendor: clean(p[3]), product: clean(p[4]), version: p[5] };
-}
-
-/** NVD CVE API 2.0 response -> canonical vulnerability records. */
+/**
+ * NVD CVE API 2.0 response (full or compact feed) -> canonical vulnerability records.
+ * All affected products are kept (affectedProducts). NVD's analysed CPE data is
+ * preferred; the CNA's own "affected" data is used when NVD has not analysed
+ * the CVE yet. The primary vendor/product shown in the register is the CNA's
+ * product where it appears, because NVD lists products in arbitrary order.
+ */
 export function normaliseNvd(json) {
   const out = [];
   for (const item of (json && json.vulnerabilities) || []) {
     const c = item.cve || {};
-    const desc = ((c.descriptions || []).find((d) => d.lang === 'en') || {}).value || '';
-    const metric = ((c.metrics || {}).cvssMetricV31 || (c.metrics || {}).cvssMetricV30 || [])[0];
-    const cvss = metric ? metric.cvssData : null;
-    const ranges = [];
-    const fixed = [];
-    let vendor = '';
-    let product = '';
-    for (const conf of c.configurations || []) {
-      for (const node of conf.nodes || []) {
-        for (const m of node.cpeMatch || []) {
-          if (!m.vulnerable) continue;
-          const parts = cpeParts(m.criteria);
-          if (!parts) continue;
-          if (!vendor) { vendor = parts.vendor; product = parts.product; }
-          if (normaliseName(parts.product) !== normaliseName(product)) continue; // first product only
-          const conds = [];
-          if (m.versionStartIncluding) conds.push(`>=${m.versionStartIncluding}`);
-          if (m.versionStartExcluding) conds.push(`>${m.versionStartExcluding}`);
-          if (m.versionEndIncluding) conds.push(`<=${m.versionEndIncluding}`);
-          if (m.versionEndExcluding) { conds.push(`<${m.versionEndExcluding}`); fixed.push(m.versionEndExcluding); }
-          if (!conds.length && parts.version && parts.version !== '*' && parts.version !== '-') conds.push(`=${parts.version}`);
-          if (conds.length) ranges.push(conds.join(' '));
-          else ranges.push('*');
-        }
-      }
+    const desc = String(((c.descriptions || []).find((d) => d.lang === 'en') || {}).value || '').slice(0, 8000);
+    const metric = selectMetric(c.metrics);
+    // Compact feed files carry pre-computed products; full API responses are converted here.
+    const nvdProducts = c.vmtProducts ? c.vmtProducts.filter((p) => p.source === 'NVD') : productsFromConfigurations(c.configurations);
+    const cnaProducts = c.vmtProducts ? c.vmtProducts.filter((p) => p.source === 'CNA') : productsFromAffected(c.affected);
+    const products = nvdProducts.length ? nvdProducts : cnaProducts;
+    let primary = products[0] || null;
+    const cnaHint = c.vmtProducts ? c.vmtCnaProduct : (cnaProducts[0] && cnaProducts[0].product);
+    if (nvdProducts.length && cnaHint) {
+      const cna = normaliseName(cnaHint);
+      primary = nvdProducts.find((p) => {
+        const n = normaliseName(p.product);
+        return n && cna && (cna.includes(n) || n.includes(cna));
+      }) || primary;
     }
+    const allFixed = [...new Set(products.flatMap((p) => (p.fixedVersions ? p.fixedVersions.split(', ') : [])))];
     out.push({
       id: String(c.id || '').toUpperCase(),
       title: titleFrom(desc),
       description: desc,
       published: String(c.published || '').slice(0, 10),
       lastModified: String(c.lastModified || '').slice(0, 10),
-      cvssScore: cvss ? cvss.baseScore : undefined,
-      cvssVector: cvss ? cvss.vectorString : undefined,
-      severity: cvss ? (cvss.baseSeverity ? cvss.baseSeverity[0] + cvss.baseSeverity.slice(1).toLowerCase() : severityFromScore(cvss.baseScore)) : undefined,
-      vendor,
-      product,
-      affectedVersions: ranges.includes('*') ? '*' : ranges.join(' || '),
-      fixedVersions: fixed.join(', '),
-      references: (c.references || []).map((r) => r.url).filter(Boolean),
+      cvssScore: metric ? metric.score : undefined,
+      cvssVector: metric ? metric.vector : undefined,
+      severity: metric ? (metric.severity || severityFromScore(metric.score)) : undefined,
+      vendor: primary ? primary.vendor.slice(0, 120) : '',
+      product: primary ? primary.product.slice(0, 120) : '',
+      affectedVersions: primary ? joinWithin(primary.affectedVersions.split(' || ').filter(Boolean), ' || ', 500) : '',
+      fixedVersions: joinWithin(allFixed, ', ', 300),
+      references: (c.references || []).map((r) => r.url).filter((u) => /^https:\/\//.test(u || '')).slice(0, 25),
+      affectedProducts: products.length ? products : undefined,
+      nvdStatus: c.vulnStatus || undefined,
+      _hasProductData: products.length > 0,
       _source: 'NVD',
     });
   }
@@ -101,9 +94,16 @@ export const ADAPTERS = {
 };
 
 // ------------------------------------------------------------- planning
-const FIELDS = ['title', 'description', 'published', 'lastModified', 'cvssScore', 'cvssVector', 'severity', 'vendor', 'product', 'affectedVersions', 'fixedVersions', 'references', 'exploitationStatus', 'exploitAvailability', 'remediation'];
+const FIELDS = ['title', 'description', 'published', 'lastModified', 'cvssScore', 'cvssVector', 'severity', 'vendor', 'product', 'affectedVersions', 'fixedVersions', 'references', 'affectedProducts', 'affectedProductsTotal', 'nvdStatus', 'exploitationStatus', 'exploitAvailability', 'remediation'];
 
-function same(field, a, b) {
+const productKey = (list) => list.map((p) => `${normaliseName(p.vendor)}|${normaliseName(p.product)}|${describeExpression(p.affectedVersions || '')}`).sort().join('\n');
+
+function same(field, a, b, existing = {}) {
+  if (field === 'affectedProducts') {
+    // A record without a product list is equivalent to its single primary product.
+    const cur = Array.isArray(a) && a.length ? a : [{ vendor: existing.vendor, product: existing.product, affectedVersions: existing.affectedVersions }];
+    return productKey(cur) === productKey(b || []);
+  }
   if (field === 'vendor' || field === 'product') return normaliseName(a) === normaliseName(b);
   if (field === 'affectedVersions') return describeExpression(a || '') === describeExpression(b || '');
   if (field === 'fixedVersions') return String(a || '').replace(/\s/g, '') === String(b || '').replace(/\s/g, '');
@@ -125,7 +125,7 @@ function same(field, a, b) {
  *  - Every resulting record is validated; invalid records are rejected.
  */
 export function planIngestion(incoming, store) {
-  const plan = { creates: [], updates: [], unchanged: [], deferred: [], rejected: [], duplicatesInBatch: 0 };
+  const plan = { creates: [], updates: [], unchanged: [], deferred: [], rejected: [], withdrawn: [], duplicatesInBatch: 0 };
   const seen = new Set();
   for (const rec of incoming) {
     if (!rec.id || !/^CVE-\d{4}-\d{4,}$/.test(rec.id)) {
@@ -135,10 +135,14 @@ export function planIngestion(incoming, store) {
     if (seen.has(rec.id)) { plan.duplicatesInBatch += 1; continue; }
     seen.add(rec.id);
     const existing = store.get('vulnerabilities', rec.id);
+    if (!existing && rec.nvdStatus === 'Rejected') {
+      plan.withdrawn.push({ id: rec.id, reason: 'Rejected (withdrawn) by NVD - not added to the register.' });
+      continue;
+    }
     if (!existing) {
       if (rec._partial) { plan.deferred.push({ id: rec.id, reason: `Listed by ${rec._source} (${rec._kevVendor || ''} ${rec._kevProduct || ''}) but not yet in the register; awaiting full record from NVD.` }); continue; }
       const record = {
-        exploitAvailability: 'Unknown', exploitationStatus: 'Unknown', remediation: '', cvssVector: '',
+        exploitAvailability: 'Unknown', exploitationStatus: 'Unknown', remediation: '', cvssVector: '', severity: 'None',
         ...Object.fromEntries(FIELDS.filter((f) => rec[f] !== undefined && rec[f] !== '').map((f) => [f, rec[f]])),
         id: rec.id,
         source: rec._source,
@@ -157,7 +161,7 @@ export function planIngestion(incoming, store) {
       if (f === 'exploitAvailability' && existing[f] === 'Public exploit') continue;
       if (f === 'remediation' && existing.remediation) continue;
       if (f === 'title' && existing.title) continue;
-      if (!same(f, existing[f], val)) changes[f] = { from: existing[f], to: val };
+      if (!same(f, existing[f], val, existing)) changes[f] = { from: existing[f], to: val };
     }
     if (!Object.keys(changes).length) { plan.unchanged.push(rec.id); continue; }
     const patch = Object.fromEntries(Object.entries(changes).map(([k, c]) => [k, c.to]));

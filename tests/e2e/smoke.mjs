@@ -46,7 +46,8 @@ try {
   browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
   const errors = [];
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  // Expected 404s for a missing NVD feed (tested deliberately) are not failures.
+  page.on('console', (m) => { if (m.type() === 'error' && !(m.location().url || '').includes('/feeds/nvd/')) errors.push(m.text()); });
   page.on('pageerror', (e) => errors.push(e.message));
 
   await page.goto(base);

@@ -147,6 +147,7 @@ function data(el, ctx) {
       </div>
       <div class="card">
         <div class="card-header"><h3>Record counts</h3></div>
+        ${store.provider.usage ? (() => { const u = store.provider.usage(store.snapshot); return `<p class="small">Browser storage used: <strong>${Math.round(u.fraction * 100)}%</strong> (${Math.round(u.used / 1024)} KB of about ${Math.round(u.limit / 1024)} KB).</p>`; })() : ''}
         <dl class="kv">${counts.map(([l, n]) => `<dt>${esc(l)}</dt><dd>${n}</dd>`).join('')}</dl>
       </div>
     </div>`;
