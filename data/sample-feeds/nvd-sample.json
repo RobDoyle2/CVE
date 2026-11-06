@@ -1,0 +1,63 @@
+{
+  "_comment": "FICTIONAL demonstration data in the shape of the NVD CVE API 2.0 response. Not real CVEs.",
+  "resultsPerPage": 4,
+  "startIndex": 0,
+  "totalResults": 4,
+  "format": "NVD_CVE",
+  "version": "2.0",
+  "timestamp": "2026-11-06T06:00:00.000",
+  "vulnerabilities": [
+    {
+      "cve": {
+        "id": "CVE-2099-10001",
+        "published": "2026-10-29T10:15:00.000",
+        "lastModified": "2026-11-02T08:00:00.000",
+        "descriptions": [{ "lang": "en", "value": "A crafted HTTP request can cause the servlet container to execute attacker-supplied code. Fictional sample record for demonstration purposes." }],
+        "metrics": { "cvssMetricV31": [{ "cvssData": { "baseScore": 9.8, "baseSeverity": "CRITICAL" } }] },
+        "configurations": [{ "nodes": [{ "cpeMatch": [
+          { "vulnerable": true, "criteria": "cpe:2.3:a:apache:tomcat:*:*:*:*:*:*:*:*", "versionStartIncluding": "9.0.0", "versionEndExcluding": "9.0.85" },
+          { "vulnerable": true, "criteria": "cpe:2.3:a:apache:tomcat:*:*:*:*:*:*:*:*", "versionStartIncluding": "10.1.0", "versionEndExcluding": "10.1.18" }
+        ] }] }],
+        "references": [{ "url": "https://tomcat.apache.org/security-9.html" }]
+      }
+    },
+    {
+      "cve": {
+        "id": "CVE-2099-10006",
+        "published": "2026-08-10T09:00:00.000",
+        "lastModified": "2026-11-05T12:30:00.000",
+        "descriptions": [{ "lang": "en", "value": "An extension install script may allow privilege escalation. Re-analysed: also reachable without the extension via a crafted function call. Fictional sample record for demonstration purposes." }],
+        "metrics": { "cvssMetricV31": [{ "cvssData": { "baseScore": 7.2, "baseSeverity": "HIGH", "vectorString": "CVSS:3.1/AV:N/AC:L/PR:H/UI:N/S:U/C:H/I:H/A:H" } }] },
+        "configurations": [{ "nodes": [{ "cpeMatch": [
+          { "vulnerable": true, "criteria": "cpe:2.3:a:postgresql:postgresql:*:*:*:*:*:*:*:*", "versionStartIncluding": "14.0", "versionEndExcluding": "14.10" },
+          { "vulnerable": true, "criteria": "cpe:2.3:a:postgresql:postgresql:*:*:*:*:*:*:*:*", "versionStartIncluding": "15.0", "versionEndExcluding": "15.5" }
+        ] }] }],
+        "references": [{ "url": "https://www.postgresql.org/support/security/" }]
+      }
+    },
+    {
+      "cve": {
+        "id": "CVE-2099-10013",
+        "published": "2026-11-05T15:00:00.000",
+        "lastModified": "2026-11-05T15:00:00.000",
+        "descriptions": [{ "lang": "en", "value": "HTTP request smuggling in the Node.js HTTP parser (fictional). Fictional sample record for demonstration purposes." }],
+        "metrics": { "cvssMetricV31": [{ "cvssData": { "baseScore": 7.5, "baseSeverity": "HIGH" } }] },
+        "configurations": [{ "nodes": [{ "cpeMatch": [
+          { "vulnerable": true, "criteria": "cpe:2.3:a:nodejs:node.js:*:*:*:*:*:*:*:*", "versionStartIncluding": "18.0.0", "versionEndExcluding": "18.18.2" },
+          { "vulnerable": true, "criteria": "cpe:2.3:a:nodejs:node.js:*:*:*:*:*:*:*:*", "versionStartIncluding": "20.0.0", "versionEndExcluding": "20.8.1" }
+        ] }] }],
+        "references": [{ "url": "https://nodejs.org/en/blog/vulnerability" }]
+      }
+    },
+    {
+      "cve": {
+        "id": "CVE-2099-10014",
+        "published": "",
+        "lastModified": "2026-11-05T15:00:00.000",
+        "descriptions": [],
+        "configurations": [],
+        "references": []
+      }
+    }
+  ]
+}

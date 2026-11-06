@@ -239,5 +239,63 @@ export const workflows = [
       return 'ok';
     },
   },
+  {
+    name: 'monitoring: simulated NVD + KEV checks create/update CVEs and raise notifications',
+    async run(page, { base }) {
+      await page.goto(`${base}#/monitoring`);
+      const before = await page.evaluate(() => window.__vmt.store.count('notifications'));
+      await page.click('[data-check="SRC-001"]');
+      await page.waitForSelector('#apply-ingest');
+      const body = await page.locator('.modal-body').textContent();
+      assert(/1 new/.test(body) && /1 changed/.test(body) && /1 unchanged/.test(body) && /1 rejected/.test(body), `plan: ${body.slice(0, 200)}`);
+      await page.click('#apply-ingest');
+      await page.waitForSelector('.modal', { state: 'detached' });
+      await page.click('[data-check="SRC-002"]');
+      await page.waitForSelector('#apply-ingest');
+      await page.click('#apply-ingest');
+      await page.waitForSelector('.modal', { state: 'detached' });
+      const st = await page.evaluate(() => ({
+        node: !!window.__vmt.store.get('vulnerabilities', 'CVE-2099-10013'),
+        kev: window.__vmt.store.get('vulnerabilities', 'CVE-2099-10003').exploitationStatus,
+        notes: window.__vmt.store.count('notifications'),
+        src: window.__vmt.store.get('monitoringSources', 'SRC-001').lastStatus,
+      }));
+      assert(st.node && st.kev === 'Known exploited (CISA KEV)', JSON.stringify(st));
+      assert(st.notes >= before + 2, `expected new notifications, ${JSON.stringify(st)}`);
+      assert(/OK \(simulated\)/.test(st.src), st.src);
+      await page.click('.tab[data-tab="notifications"]');
+      const txt = await page.locator('#tab-body').textContent();
+      assert(txt.includes('CVE-2099-10013'), 'notification list should include new CVE');
+      await page.click('.tab[data-tab="sources"]');
+      const live = await page.locator('[data-check="SRC-003"]');
+      await live.click();
+      const msg = await page.locator('.modal-body').textContent();
+      assert(/backend/.test(msg), 'non-demo source should explain backend requirement');
+      return 'ok';
+    },
+  },
+  {
+    name: 'AI: disabled by default, simulated output labelled, endpoint validation',
+    async run(page, { base }) {
+      await page.goto(`${base}#/assessments/CVE-2099-10001`);
+      const off = await page.locator('#ai-panel').textContent();
+      assert(/disabled/.test(off), 'AI should be disabled by default');
+      await page.goto(`${base}#/settings?tab=integrations`);
+      await page.selectOption('#ai-mode', 'backend');
+      await page.fill('#ai-endpoint', 'http://insecure.example.com/ai');
+      await page.click('#save');
+      const setting = await page.evaluate(() => window.__vmt.store.getSettings().aiProvider);
+      assert(setting === 'disabled', 'insecure endpoint must be rejected');
+      await page.selectOption('#ai-mode', 'simulated');
+      await page.fill('#ai-endpoint', '');
+      await page.click('#save');
+      await page.goto(`${base}#/assessments/CVE-2099-10001`);
+      await page.click('[data-ai="summariseImpact"]');
+      await page.waitForSelector('#ai-out pre');
+      const out = await page.locator('#ai-out').textContent();
+      assert(/SIMULATED OUTPUT/.test(out) && /not evidence/.test(out), 'simulated output must be labelled');
+      return 'ok';
+    },
+  },
 ];
 

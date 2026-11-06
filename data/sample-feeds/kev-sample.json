@@ -1,0 +1,12 @@
+{
+  "_comment": "FICTIONAL demonstration data in the shape of the CISA KEV catalogue JSON feed. Not real entries.",
+  "title": "CISA Catalog of Known Exploited Vulnerabilities (sample)",
+  "catalogVersion": "2026.11.06",
+  "dateReleased": "2026-11-06T05:00:00.000Z",
+  "count": 3,
+  "vulnerabilities": [
+    { "cveID": "CVE-2099-10001", "vendorProject": "Apache", "product": "Tomcat", "vulnerabilityName": "Apache Tomcat RCE (fictional)", "dateAdded": "2026-11-01", "shortDescription": "Fictional", "requiredAction": "Apply mitigations per vendor instructions.", "dueDate": "2026-11-22", "knownRansomwareCampaignUse": "Unknown" },
+    { "cveID": "CVE-2099-10003", "vendorProject": "OpenSSL", "product": "OpenSSL", "vulnerabilityName": "OpenSSL DoS (fictional)", "dateAdded": "2026-11-06", "shortDescription": "Fictional", "requiredAction": "Apply updates per vendor instructions.", "dueDate": "2026-11-27", "knownRansomwareCampaignUse": "Unknown" },
+    { "cveID": "CVE-2099-10099", "vendorProject": "Example Labs", "product": "Example Router", "vulnerabilityName": "Example Router auth bypass (fictional)", "dateAdded": "2026-11-06", "shortDescription": "Fictional", "requiredAction": "Apply updates per vendor instructions.", "dueDate": "2026-11-27", "knownRansomwareCampaignUse": "Unknown" }
+  ]
+}

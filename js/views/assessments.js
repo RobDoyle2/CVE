@@ -10,6 +10,7 @@ import { toast } from '../ui/toast.js';
 import { SEVERITIES } from '../models/lookups.js';
 import { cachedAssessAll, STATUS_ORDER, PRIORITY_LABELS, ENGINE_VERSION } from '../services/assessment-engine.js';
 import { exportButtons, bindExportButtons, downloadDataset } from './export-helpers.js';
+import { renderAiPanel } from './ai-panel.js';
 
 export function render(el, ctx) {
   if (ctx.params.id) return renderDetail(el, ctx);
@@ -202,7 +203,7 @@ function renderDetail(el, ctx) {
     const f = findings.find((x) => x.softwareId === btn.dataset.review);
     openReviewForm(ctx, cve, f, () => renderDetail(el, ctx));
   }));
-  if (ctx.renderAiPanel) ctx.renderAiPanel(el.querySelector('#ai-panel'), result);
+  renderAiPanel(el.querySelector('#ai-panel'), result, store);
 }
 
 function openReviewForm(ctx, cve, f, onSaved) {
