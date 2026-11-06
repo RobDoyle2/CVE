@@ -61,6 +61,19 @@ const canonical = (map, value) => {
   return map.get(n) || n;
 };
 
+/**
+ * Canonical product name with the vendor name removed from the front, so
+ * "Red Hat OpenShift Container Platform" (vendor Red Hat) and
+ * "OpenShift Container Platform" compare equal.
+ */
+function canonicalProduct(aliases, vendor, product) {
+  const p = canonical(aliases.product, product);
+  for (const v of new Set([normaliseName(vendor), canonical(aliases.vendor, vendor)])) {
+    if (v && p.startsWith(v) && p.length - v.length >= 3) return canonical(aliases.product, p.slice(v.length));
+  }
+  return p;
+}
+
 function parseCpe(cpe) {
   const m = String(cpe || '').match(/^cpe:2\.3:[aho]:([^:]+):([^:]+):/);
   return m ? { vendor: normaliseName(m[1].replace(/_/g, ' ')), product: normaliseName(m[2].replace(/_/g, ' ')) } : null;
@@ -74,35 +87,45 @@ const tokens = (s) => String(s || '').toLowerCase().split(/[^a-z0-9]+/).filter((
  */
 export function matchProduct(cve, sw, aliases = buildAliasMaps()) {
   const cv = canonical(aliases.vendor, cve.vendor);
-  const cp = canonical(aliases.product, cve.product);
   const sv = canonical(aliases.vendor, sw.vendor);
-  const sp = canonical(aliases.product, sw.product);
+  // Full product names, and names with a leading vendor name removed
+  // ("Red Hat OpenShift" -> "OpenShift"). Stripped names are only trusted
+  // when the vendor also matches, because the remainder can be generic
+  // ("Amazon Linux" / "Debian Linux" -> "linux").
+  const cpFull = canonical(aliases.product, cve.product);
+  const spFull = canonical(aliases.product, sw.product);
+  const cp = canonicalProduct(aliases, cve.vendor, cve.product);
+  const sp = canonicalProduct(aliases, sw.vendor, sw.product);
   const evidence = [];
   const cpe = parseCpe(sw.cpe);
 
   const vendorMatch = cv && sv && (cv === sv || (Math.min(cv.length, sv.length) >= 4 && (cv.startsWith(sv) || sv.startsWith(cv))))
     || (cpe && cpe.vendor === cv);
-  const productEqual = cp && sp && (cp === sp || (cpe && cpe.product === cp));
+  const sameVendorProduct = cp && sp && (cp === sp || cpFull === spFull || (cpe && cpe.product === cp));
+  const crossVendorProduct = cpFull && spFull && cpFull === spFull;
 
   const aliasNote = [];
   if (normaliseName(cve.vendor) !== cv || normaliseName(sw.vendor) !== sv) aliasNote.push('vendor alias');
-  if (normaliseName(cve.product) !== cp || normaliseName(sw.product) !== sp) aliasNote.push('product alias');
+  if (normaliseName(cve.product) !== cp || normaliseName(sw.product) !== sp) aliasNote.push('product alias or vendor-name prefix');
 
-  if (productEqual && vendorMatch) {
+  if (sameVendorProduct && vendorMatch) {
     evidence.push(`Vendor and product match: CVE "${cve.vendor} ${cve.product}" ↔ inventory "${sw.vendor} ${sw.product}"${aliasNote.length ? ` (via ${aliasNote.join(' and ')})` : ''}${cpe && cpe.product === cp ? ' (CPE identifier agrees)' : ''}.`);
     return { type: 'exact', strength: 'strong', evidence };
   }
-  if (productEqual) {
+  if (crossVendorProduct) {
     evidence.push(`Product name matches ("${cve.product}") but vendor differs: CVE lists "${cve.vendor}", inventory records "${sw.vendor}".`);
     return { type: 'product', strength: 'moderate', evidence };
   }
-  const containment = cp && sp && Math.min(cp.length, sp.length) >= 5 && (cp.includes(sp) || sp.includes(cp));
   const shared = tokens(cve.product).filter((t) => tokens(sw.product).includes(t));
-  if (vendorMatch && (containment || shared.length)) {
-    evidence.push(`Partial product-name similarity within the same vendor ("${cve.product}" vs "${sw.product}"${shared.length ? `, shared term: ${shared.join(', ')}` : ''}). These may be different products or editions.`);
-    return { type: 'partial', strength: 'weak', evidence };
+  if (vendorMatch) {
+    const containment = cp && sp && Math.min(cp.length, sp.length) >= 5 && (cp.includes(sp) || sp.includes(cp));
+    if (containment || shared.length) {
+      evidence.push(`Partial product-name similarity within the same vendor ("${cve.product}" vs "${sw.product}"${shared.length ? `, shared term: ${shared.join(', ')}` : ''}). These may be different products or editions.`);
+      return { type: 'partial', strength: 'weak', evidence };
+    }
   }
-  if (containment && cp.length >= 6) {
+  const containmentFull = cpFull && spFull && Math.min(cpFull.length, spFull.length) >= 5 && (cpFull.includes(spFull) || spFull.includes(cpFull));
+  if (containmentFull && cpFull.length >= 6) {
     evidence.push(`Product names overlap ("${cve.product}" vs "${sw.product}") but vendors differ. Likely unrelated; listed for completeness.`);
     return { type: 'partial', strength: 'weak', evidence };
   }
@@ -282,6 +305,7 @@ export function assessPair(cve, sw, { store, aliases, settings = {}, reviews = [
   }[versionEval.result];
   evidence.push({ kind: vText.kind, strength: null, text: `Version check: ${vText.text}` });
   if (cve.fixedVersions) evidence.push({ kind: 'info', strength: null, text: `Vendor fixed version(s): ${cve.fixedVersions}.` });
+  if (cve._productSource === 'CNA') evidence.push({ kind: 'info', strength: null, text: 'Affected product and version data supplied by the CVE Numbering Authority (CNA); NVD has not analysed this CVE yet.' });
   if (impact.applications.length) {
     evidence.push({ kind: 'info', strength: null, text: `Deployed in ${impact.applications.length} application(s) across ${impact.environments.join(', ') || 'unknown environments'}.` });
   }
@@ -290,6 +314,7 @@ export function assessPair(cve, sw, { store, aliases, settings = {}, reviews = [
   }
 
   const dataQuality = dataQualityFor(cve, sw, impact, versionEval, settings, now);
+  if (cve._productSource === 'CNA') dataQuality.push({ level: 'info', text: `Product data for ${cve.id} comes from the CNA, not NVD analysis; vendor version schemes (e.g. RPM builds) are compared heuristically.` });
   let reviewStale = false;
   if (review && cve.lastModified && String(cve.lastModified) > String(review.reviewedAt).slice(0, 10)) {
     reviewStale = true;
@@ -325,10 +350,12 @@ export function buildSoftwareIndex(software, aliases) {
   const byVendor = new Map();
   const push = (map, k, e) => { if (!k) return; if (!map.has(k)) map.set(k, []); map.get(k).push(e); };
   for (const sw of software) {
-    const p = canonical(aliases.product, sw.product);
+    const p = canonicalProduct(aliases, sw.vendor, sw.product);
+    const full = canonical(aliases.product, sw.product);
     const v = canonical(aliases.vendor, sw.vendor);
     const cpe = parseCpe(sw.cpe);
     push(byProduct, p, sw);
+    if (full !== p) push(byProduct, full, sw);
     push(byVendor, v, sw);
     if (cpe) { push(byProduct, cpe.product, sw); push(byVendor, cpe.vendor, sw); }
   }
@@ -337,8 +364,9 @@ export function buildSoftwareIndex(software, aliases) {
 
 function candidatesFor(cve, index, aliases) {
   const cv = canonical(aliases.vendor, cve.vendor);
-  const cp = canonical(aliases.product, cve.product);
-  const out = new Set(index.byProduct.get(cp) || []);
+  const cp = canonicalProduct(aliases, cve.vendor, cve.product);
+  const cpFull = canonical(aliases.product, cve.product);
+  const out = new Set([...(index.byProduct.get(cp) || []), ...(index.byProduct.get(cpFull) || [])]);
   for (const vk of index.vendorKeys) {
     if (vk === cv || (cv && Math.min(vk.length, cv.length) >= 4 && (vk.startsWith(cv) || cv.startsWith(vk)))) {
       for (const sw of index.byVendor.get(vk)) out.add(sw);
@@ -372,13 +400,67 @@ function prepareContext(store, opts = {}) {
 }
 
 /** Assess one CVE against the whole inventory. */
+const STRENGTH = { strong: 0, moderate: 1, weak: 2 };
+
+/**
+ * A CVE can affect several products (e.g. a library and every product that
+ * bundles it). Each affected product is evaluated as a separate "view" of the
+ * CVE; records without a product list use their primary vendor/product.
+ */
+export function productViews(cve) {
+  if (!Array.isArray(cve.affectedProducts) || !cve.affectedProducts.length) return [cve];
+  return cve.affectedProducts.map((p) => ({
+    ...cve,
+    vendor: p.vendor,
+    product: p.product,
+    affectedVersions: p.affectedVersions || '',
+    fixedVersions: p.fixedVersions || cve.fixedVersions,
+    _productSource: p.source,
+  }));
+}
+
+/** Does any affected product of this CVE match the inventory (exact or product-name match)? */
+export function matchesInventory(cve, index, aliases) {
+  for (const view of productViews(cve)) {
+    for (const sw of candidatesFor(view, index, aliases)) {
+      const m = matchProduct(view, sw, aliases);
+      if (m.type === 'exact' || m.type === 'product') return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Reduce a CVE's product list to the products that relate to the inventory
+ * (any match type) plus its primary product, to keep browser storage small.
+ * The total number of affected products is retained for display.
+ */
+export function trimToRelevantProducts(cve, index, aliases) {
+  if (!Array.isArray(cve.affectedProducts) || cve.affectedProducts.length <= 3) return cve;
+  const keep = cve.affectedProducts.filter((p, i) => {
+    if (i === 0 || (p.vendor === cve.vendor && p.product === cve.product)) return true;
+    const view = { ...cve, vendor: p.vendor, product: p.product };
+    for (const sw of candidatesFor(view, index, aliases)) if (matchProduct(view, sw, aliases).type) return true;
+    return false;
+  });
+  return { ...cve, affectedProducts: keep, affectedProductsTotal: cve.affectedProducts.length };
+}
+
 export function assessCve(cve, store, opts = {}) {
   const ctx = opts.cache ? opts : prepareContext(store, opts);
-  const findings = [];
-  for (const sw of candidatesFor(cve, ctx.index, ctx.aliases)) {
-    const f = assessPair(cve, sw, { store, ...ctx });
-    if (f) findings.push(f);
+  if (cve.nvdStatus === 'Rejected') return { cve, findings: [], summary: { ...summarise(cve, []), status: 'No inventory match', rejected: true } };
+  // Keep the most serious finding per software record across all affected products.
+  const best = new Map();
+  for (const view of productViews(cve)) {
+    for (const sw of candidatesFor(view, ctx.index, ctx.aliases)) {
+      const f = assessPair(view, sw, { store, ...ctx });
+      if (!f) continue;
+      const prev = best.get(sw.id);
+      if (!prev || rank(f.status) < rank(prev.status)
+        || (rank(f.status) === rank(prev.status) && STRENGTH[f.match.strength] < STRENGTH[prev.match.strength])) best.set(sw.id, f);
+    }
   }
+  const findings = [...best.values()];
   findings.sort((a, b) => rank(a.status) - rank(b.status) || a.softwareId.localeCompare(b.softwareId));
   return { cve, findings, summary: summarise(cve, findings) };
 }

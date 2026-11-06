@@ -17,6 +17,10 @@ test('product matching uses aliases and distinguishes match strength', async () 
   assert.equal(matchProduct({ vendor: 'VMware', product: 'Spring Framework' }, { vendor: 'VMware', product: 'Spring Boot' }, aliases).type, 'partial');
   assert.equal(matchProduct({ vendor: 'Example Labs', product: 'httpclient' }, { vendor: 'Oracle', product: 'MySQL' }, aliases).type, null);
   assert.equal(matchProduct({ vendor: 'Apache', product: 'Log4j' }, { vendor: 'Apache', product: 'log4j2' }, aliases).type, 'exact');
+  // Vendor name repeated in the product name
+  assert.equal(matchProduct({ vendor: 'Red Hat', product: 'Red Hat OpenShift Container Platform' }, { vendor: 'Red Hat', product: 'OpenShift Container Platform' }, aliases).type, 'exact');
+  // ...but a generic remainder must not match across vendors
+  assert.equal(matchProduct({ vendor: 'Debian', product: 'Debian Linux' }, { vendor: 'Amazon', product: 'Amazon Linux' }, aliases).type, null);
 });
 
 test('expected outcomes for every fictional sample CVE', async () => {
