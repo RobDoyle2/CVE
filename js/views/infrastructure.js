@@ -83,10 +83,10 @@ function renderInfraList(el, ctx) {
     <div class="card">
       <div class="toolbar">
         <input class="input search" type="search" id="q" placeholder="Search name, cluster, namespace, owner…" value="${esc(state.q)}" aria-label="Search infrastructure">
-        ${selectFilter('f-env', 'Environment', ENVIRONMENTS)}
-        ${selectFilter('f-platform', 'Platform', HOSTING_PLATFORMS)}
-        ${selectFilter('f-cluster', 'Cluster type', CLUSTER_TYPES)}
-        ${selectFilter('f-account', 'AWS account', store.all('awsAccounts').map((a) => ({ value: a.id, label: a.accountName })), state.account)}
+        ${selectFilter('flt-env', 'Environment', ENVIRONMENTS)}
+        ${selectFilter('flt-platform', 'Platform', HOSTING_PLATFORMS)}
+        ${selectFilter('flt-cluster', 'Cluster type', CLUSTER_TYPES)}
+        ${selectFilter('flt-account', 'AWS account', store.all('awsAccounts').map((a) => ({ value: a.id, label: a.accountName })), state.account)}
         ${canWrite ? button('Add infrastructure', { variant: 'primary', icon: 'plus', attrs: 'id="add"' }) : ''}
         <span class="count" id="count"></span>
       </div>
@@ -135,7 +135,7 @@ function renderInfraList(el, ctx) {
   const refresh = () => { const rows = table.render(); el.querySelector('#count').textContent = `${rows.length} of ${store.count('infrastructure')}`; };
   refresh();
   el.querySelector('#q').addEventListener('input', debounce((e) => { state.q = e.target.value; refresh(); }, 150));
-  [['#f-env', 'env'], ['#f-platform', 'platform'], ['#f-cluster', 'cluster'], ['#f-account', 'account']].forEach(([id, k]) => el.querySelector(id).addEventListener('change', (e) => { state[k] = e.target.value; refresh(); }));
+  [['#flt-env', 'env'], ['#flt-platform', 'platform'], ['#flt-cluster', 'cluster'], ['#flt-account', 'account']].forEach(([id, k]) => el.querySelector(id).addEventListener('change', (e) => { state[k] = e.target.value; refresh(); }));
   const add = el.querySelector('#add');
   if (add) add.addEventListener('click', () => openInfraForm(ctx, null, refresh));
   el.querySelector('#table').addEventListener('click', async (e) => {
@@ -155,7 +155,7 @@ function renderAccounts(el, ctx) {
     <div class="card">
       <div class="toolbar">
         <input class="input search" type="search" id="q" placeholder="Search account name, ID, owner…" value="${esc(state.q)}" aria-label="Search AWS accounts">
-        ${selectFilter('f-env', 'Environment', ENVIRONMENTS)}
+        ${selectFilter('flt-env', 'Environment', ENVIRONMENTS)}
         ${canWrite ? button('Add AWS account', { variant: 'primary', icon: 'plus', attrs: 'id="add"' }) : ''}
         <span class="count" id="count"></span>
       </div>
@@ -196,7 +196,7 @@ function renderAccounts(el, ctx) {
   const refresh = () => { const rows = table.render(); el.querySelector('#count').textContent = `${rows.length} of ${store.count('awsAccounts')}`; };
   refresh();
   el.querySelector('#q').addEventListener('input', debounce((e) => { state.q = e.target.value; refresh(); }, 150));
-  el.querySelector('#f-env').addEventListener('change', (e) => { state.env = e.target.value; refresh(); });
+  el.querySelector('#flt-env').addEventListener('change', (e) => { state.env = e.target.value; refresh(); });
   const add = el.querySelector('#add');
   if (add) add.addEventListener('click', () => openAccountForm(ctx, null, refresh));
   el.querySelector('#table').addEventListener('click', async (e) => {

@@ -99,4 +99,73 @@ export const workflows = [
       return 'ok';
     },
   },
+  {
+    name: 'assessment: analyst records decision; engine never self-confirms',
+    async run(page, { base }) {
+      await page.goto(`${base}#/assessments/CVE-2099-10002`);
+      await page.waitForSelector('[data-finding="SW-004"]');
+      const before = await page.locator('[data-finding="SW-004"] .card-header').textContent();
+      assert(before.includes('Potentially affected') && before.includes('not yet reviewed'), 'engine should show Potentially affected, unreviewed');
+      await page.click('[data-review="SW-004"]');
+      await page.selectOption('#f-status', 'Confirmed affected');
+      await modalSave(page);
+      const err = await page.locator('[data-field="rationale"] .error').textContent();
+      assert(/required/.test(err), 'rationale should be required');
+      await page.fill('#f-rationale', 'Verified legacy-etl.jar bundles log4j-core 2.14.1.');
+      await modalSave(page);
+      await page.waitForSelector('.modal', { state: 'detached' });
+      const after = await page.locator('[data-finding="SW-004"] .card-header').textContent();
+      assert(after.includes('Confirmed affected') && after.includes('engine: Potentially affected'), `decision not shown: ${after}`);
+      return 'ok';
+    },
+  },
+  {
+    name: 'vulnerability: invalid version range rejected; new CVE matched against inventory',
+    async run(page, { base }) {
+      await page.goto(`${base}#/vulnerabilities`);
+      await page.click('#add');
+      await page.fill('#f-id', 'CVE-2099-20001');
+      await page.fill('#f-title', 'Test MySQL flaw');
+      await page.fill('#f-description', 'Test');
+      await page.fill('#f-published', '2026-11-01');
+      await page.fill('#f-cvssScore', '9.1');
+      await page.fill('#f-vendor', 'Oracle');
+      await page.fill('#f-product', 'MySQL');
+      await page.fill('#f-affectedVersions', '>=banana');
+      await page.selectOption('#f-exploitAvailability', 'Unknown');
+      await page.selectOption('#f-exploitationStatus', 'Unknown');
+      await modalSave(page);
+      const err = await page.locator('[data-field="affectedVersions"] .error').textContent();
+      assert(/Invalid version/.test(err), `expected range error, got ${err}`);
+      await page.fill('#f-affectedVersions', '>=8.0.0 <8.0.35');
+      await modalSave(page);
+      await page.waitForSelector('.modal', { state: 'detached' });
+      await page.goto(`${base}#/assessments/CVE-2099-20001`);
+      await page.waitForSelector('[data-finding="SW-010"]');
+      const text = await page.locator('[data-finding="SW-010"]').textContent();
+      assert(text.includes('Potentially affected') && text.includes('Internal Wiki'), 'MySQL 8.0.34 should be potentially affected via Internal Wiki');
+      return 'ok';
+    },
+  },
+  {
+    name: 'software: create with initial deployment, unknown version flagged',
+    async run(page, { base }) {
+      await page.goto(`${base}#/software`);
+      await page.click('#add');
+      await page.fill('#f-vendor', 'Example Labs');
+      await page.fill('#f-product', 'httpclient');
+      await page.selectOption('#f-category', 'Library / dependency');
+      await page.selectOption('#f-verificationStatus', 'Unverified');
+      await page.selectOption('#dep-app', 'APP-008');
+      await page.selectOption('#dep-infra', 'INF-013');
+      await modalSave(page);
+      await page.waitForSelector('.modal', { state: 'detached' });
+      await page.goto(`${base}#/assessments/CVE-2099-10009`);
+      await page.waitForSelector('[data-finding="SW-022"]');
+      const text = await page.locator('[data-finding="SW-022"]').textContent();
+      assert(text.includes('Unable to determine') && text.includes('Mobile API'), 'unknown version should be Unable to determine with Mobile API in scope');
+      return 'ok';
+    },
+  },
 ];
+

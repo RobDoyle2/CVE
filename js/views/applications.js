@@ -12,6 +12,8 @@ import {
 } from '../services/relationships.js';
 import { onCreate, onEdit } from '../services/workflow.js';
 import { confirmAndDelete, openDeploymentForm, readOnlyNotice } from './shared.js';
+import { cachedAssessAll, findingsForApplication } from '../services/assessment-engine.js';
+import { assessmentPill, severityPill, priorityPill } from '../ui/components.js';
 
 export function render(el, ctx) {
   if (ctx.params.id) return renderDetail(el, ctx);
@@ -82,11 +84,11 @@ function renderList(el, ctx) {
     <div class="card">
       <div class="toolbar">
         <input class="input search" type="search" id="q" placeholder="Search name, ID, owner or description…" value="${esc(state.q)}" aria-label="Search applications">
-        ${selectFilter('f-crit', 'Criticality', CRITICALITY, state.criticality)}
-        ${selectFilter('f-env', 'Environment', ENVIRONMENTS, state.environment)}
-        ${selectFilter('f-internet', 'Internet-facing', [{ value: 'yes', label: 'Yes' }, { value: 'no', label: 'No' }], state.internet)}
-        ${selectFilter('f-fn', 'Business function', BUSINESS_FUNCTIONS, state.fn)}
-        ${selectFilter('f-review', 'Review status', REVIEW_STATUSES, state.review)}
+        ${selectFilter('flt-crit', 'Criticality', CRITICALITY, state.criticality)}
+        ${selectFilter('flt-env', 'Environment', ENVIRONMENTS, state.environment)}
+        ${selectFilter('flt-internet', 'Internet-facing', [{ value: 'yes', label: 'Yes' }, { value: 'no', label: 'No' }], state.internet)}
+        ${selectFilter('flt-fn', 'Business function', BUSINESS_FUNCTIONS, state.fn)}
+        ${selectFilter('flt-review', 'Review status', REVIEW_STATUSES, state.review)}
         <span class="count" id="count"></span>
       </div>
       <div id="table"></div>
@@ -137,7 +139,7 @@ function renderList(el, ctx) {
 
   el.querySelector('#q').addEventListener('input', debounce((e) => { state.q = e.target.value; refresh(); }, 150));
   const bind = (id, key) => el.querySelector(id).addEventListener('change', (e) => { state[key] = e.target.value; refresh(); });
-  bind('#f-crit', 'criticality'); bind('#f-env', 'environment'); bind('#f-internet', 'internet'); bind('#f-fn', 'fn'); bind('#f-review', 'review');
+  bind('#flt-crit', 'criticality'); bind('#flt-env', 'environment'); bind('#flt-internet', 'internet'); bind('#flt-fn', 'fn'); bind('#flt-review', 'review');
 
   const addBtn = el.querySelector('#add-app');
   if (addBtn) addBtn.addEventListener('click', () => openAppForm(ctx, null, refresh));
@@ -271,6 +273,23 @@ function renderDetail(el, ctx) {
     if (dd && await confirmAndDelete(store, 'deployments', dd.dataset.delDep, `deployment ${dd.dataset.delDep}`)) rerender();
   });
 
-  // Hook for related vulnerability summary (assessment engine)
-  if (ctx.renderRelatedVulns) ctx.renderRelatedVulns(el.querySelector('#related-vulns'), { applicationId: app.id });
+  renderRelatedVulns(el.querySelector('#related-vulns'), store, app.id);
+}
+
+function renderRelatedVulns(host, store, appId) {
+  const list = findingsForApplication(cachedAssessAll(store), appId).filter((x) => x.finding.status !== 'Not affected');
+  if (!list.length) {
+    host.innerHTML = '<div class="notice success mb-2">No open vulnerability findings for this application\'s recorded software.</div>';
+    return;
+  }
+  host.innerHTML = `<div class="card flush mb-2">
+    <div class="card-header"><h3>Vulnerability findings (${list.length})</h3><span class="small muted">Automated matches require verification</span></div>
+    <div class="table-wrap"><table class="data"><thead><tr><th>CVE</th><th>Severity</th><th>Software</th><th>Assessment</th><th>Priority</th><th>Environments</th></tr></thead><tbody>
+    ${list.map(({ cve, finding: f }) => {
+      const app = f.impact.applications.find((a) => a.id === appId);
+      return `<tr><td><a class="row-link mono" href="#/assessments/${esc(cve.id)}">${esc(cve.id)}</a><div class="small muted">${esc(cve.title)}</div></td>
+        <td>${severityPill(cve.severity)}</td><td>${esc(f.software.product)} <span class="mono">${esc(f.software.version || '?')}</span></td>
+        <td>${assessmentPill(f.status)}</td><td>${priorityPill(f.priority.level)}</td><td>${envTags(app ? app.environments : [])}</td></tr>`;
+    }).join('')}
+    </tbody></table></div></div>`;
 }

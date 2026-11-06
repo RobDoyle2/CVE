@@ -226,7 +226,7 @@ table.data td.actions { white-space: nowrap; text-align: right; }
 
 .evidence-list { list-style: none; margin: 0; padding: 0; }
 .evidence-list li { display: flex; gap: 8px; padding: 5px 0; font-size: 0.86rem; align-items: flex-start; }
-.evidence-list .marker { flex: none; width: 74px; }
+.evidence-list .marker { flex: none; width: 108px; }
 
 .breadcrumbs { font-size: 0.82rem; color: var(--text-muted); margin-bottom: 6px; }
 .breadcrumbs a { color: var(--text-muted); }
