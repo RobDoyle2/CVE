@@ -257,3 +257,4 @@ table.data td.actions { white-space: nowrap; text-align: right; }
 
 .import-row-error td { background: #fff6f7; }
 .import-row-dup td { background: #fffaf0; }
+table.data .mono { white-space: nowrap; }

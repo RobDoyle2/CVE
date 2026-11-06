@@ -118,6 +118,12 @@ export function validateRecord(collection, record, ctx = {}) {
       if (record.region === 'Not applicable') errors.region = 'Select the AWS region for AWS-hosted infrastructure.';
     }
   }
+  if (collection === 'deployments' && store && record.infrastructureId && record.environment) {
+    const infra = store.get('infrastructure', record.infrastructureId);
+    if (infra && infra.environment !== record.environment) {
+      errors.environment = `Environment must match the selected infrastructure (${infra.environment}).`;
+    }
+  }
   if (collection === 'vulnerabilities') {
     if (!isEmpty(record.cvssScore) && !errors.cvssScore && record.severity && record.severity !== severityFromScore(record.cvssScore)) {
       errors.severity = `Severity should be ${severityFromScore(record.cvssScore)} for a CVSS score of ${record.cvssScore}.`;
