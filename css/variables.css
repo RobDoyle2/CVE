@@ -1,0 +1,54 @@
+/* Design tokens - single source of truth for colours, spacing and radii. */
+:root {
+  /* Brand / surfaces */
+  --navy-900: #0b1530;
+  --navy-800: #111f45;
+  --navy-700: #1a2b5c;
+  --navy-600: #26397a;
+  --accent: #5b5bf0;
+  --accent-hover: #4646d6;
+  --accent-soft: #ececff;
+  --cyan: #19b5c9;
+
+  --bg: #f4f6fb;
+  --surface: #ffffff;
+  --surface-2: #f8f9fc;
+  --border: #e3e7f0;
+  --border-strong: #cfd5e3;
+
+  --text: #1d2440;
+  --text-2: #4c5578;
+  --text-muted: #7a83a3;
+  --text-on-dark: #e8ecfa;
+  --text-on-dark-muted: #9aa6cf;
+
+  /* Severity (reserved for CVSS severity; always shown with a text label) */
+  --sev-critical: #c9264b;
+  --sev-high: #e5671b;
+  --sev-medium: #f2b705;
+  --sev-low: #2f9e6a;
+  --sev-none: #8a93ad;
+
+  /* Status pills (Monday-style full-colour pills, always with text) */
+  --st-red: #d83a52;
+  --st-orange: #f08a24;
+  --st-yellow: #f6c344;
+  --st-green: #00a86b;
+  --st-blue: #3a7bd5;
+  --st-purple: #8a5cf6;
+  --st-grey: #8a93ad;
+  --st-teal: #0f9fb0;
+
+  --radius-sm: 6px;
+  --radius: 10px;
+  --radius-lg: 14px;
+  --shadow-sm: 0 1px 2px rgba(16, 24, 64, 0.06);
+  --shadow: 0 2px 8px rgba(16, 24, 64, 0.08);
+  --shadow-lg: 0 12px 32px rgba(16, 24, 64, 0.18);
+
+  --sidebar-width: 248px;
+  --topbar-height: 60px;
+
+  --font: "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "Cascadia Mono", Consolas, "SFMono-Regular", Menlo, monospace;
+}

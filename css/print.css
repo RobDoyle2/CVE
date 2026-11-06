@@ -1,0 +1,9 @@
+@media print {
+  .sidebar, .topbar, .demo-banner, .toolbar, .actions, .btn, .icon-btn, .toast-host { display: none !important; }
+  .app { display: block; }
+  body { background: #fff; font-size: 11px; }
+  .view { padding: 0; max-width: none; }
+  .card { box-shadow: none; break-inside: avoid; border-color: #ccc; }
+  .pill { border: 1px solid #333; color: #000 !important; background: #fff !important; }
+  table.data th { position: static; }
+}

@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!--
+    Content Security Policy: scripts only from this origin, no external calls.
+    When a backend API is introduced, add its origin to connect-src.
+    Inline style attributes are permitted (used for chart bar widths only).
+  -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'; frame-src 'none'">
+  <meta name="referrer" content="no-referrer">
+  <title>Vulnerability Management Tool</title>
+  <link rel="icon" href="assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/variables.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/layout.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/print.css">
+</head>
+<body>
+  <div class="app" id="app">
+    <aside class="sidebar" id="sidebar" aria-label="Main navigation">
+      <div class="brand">
+        <img class="brand-logo" src="assets/logo.svg" alt="">
+        <div>
+          <div class="brand-name">Vulnerability Management Tool</div>
+          <div class="brand-sub">Security Operations</div>
+        </div>
+      </div>
+      <nav class="nav" id="nav"></nav>
+      <div class="sidebar-footer" id="sidebar-footer"></div>
+    </aside>
+
+    <div class="main">
+      <header class="topbar">
+        <button class="icon-btn menu-toggle" id="menu-toggle" aria-label="Toggle navigation" aria-controls="sidebar" aria-expanded="false"></button>
+        <div class="topbar-title" id="topbar-title">Dashboard</div>
+        <div class="spacer"></div>
+        <div id="topbar-actions" class="flex"></div>
+      </header>
+      <div class="demo-banner" role="note">
+        Demonstration build: all records are <strong>fictional sample data</strong>. Do not enter real corporate information until the application is approved for it.
+      </div>
+      <main class="view" id="view" tabindex="-1">
+        <noscript><div class="notice danger">This application requires JavaScript to be enabled in your browser.</div></noscript>
+        <div class="empty">Loading…</div>
+      </main>
+    </div>
+  </div>
+  <div class="toast-host" id="toast-host" aria-live="polite"></div>
+  <div id="modal-host"></div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
