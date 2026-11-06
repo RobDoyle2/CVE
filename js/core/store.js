@@ -309,11 +309,38 @@ export class DataStore {
     return snap;
   }
 
+  /**
+   * Check every record in a snapshot against the schemas and relationships.
+   * Returns a list of problems (empty when the snapshot is valid).
+   */
+  static async validateSnapshot(snap, limit = 20) {
+    const problems = [];
+    const tmp = await new DataStore(new MemoryProvider({ seed: () => snap })).init();
+    const checked = ['awsAccounts', 'infrastructure', 'applications', 'applicationInfrastructure', 'software', 'deployments', 'vulnerabilities', 'assessmentReviews', 'monitoringSources'];
+    for (const c of checked) {
+      const ids = new Set();
+      for (const r of tmp.all(c)) {
+        if (problems.length >= limit) return problems;
+        if (!r || typeof r !== 'object' || typeof r.id !== 'string' || !r.id) { problems.push(`${c}: record without a valid id`); continue; }
+        if (ids.has(r.id)) problems.push(`${c} ${r.id}: duplicate id`);
+        ids.add(r.id);
+        const { valid, errors } = validateRecord(c, r, { store: tmp, existingId: r.id });
+        if (!valid) problems.push(`${c} ${r.id}: ${Object.values(errors)[0]}`);
+      }
+    }
+    return problems;
+  }
+
   async importSnapshot(snap) {
-    if (!snap || typeof snap !== 'object' || !snap.collections) throw new Error('This file is not a valid data backup.');
+    if (!snap || typeof snap !== 'object' || !snap.collections || typeof snap.collections !== 'object') throw new Error('This file is not a valid data backup.');
     if (snap.schemaVersion !== this.snapshot.schemaVersion) {
       throw new Error(`Backup schema version ${snap.schemaVersion} does not match this application (${this.snapshot.schemaVersion}).`);
     }
+    for (const c of COLLECTIONS) {
+      if (snap.collections[c] !== undefined && !Array.isArray(snap.collections[c])) throw new Error(`Backup collection "${c}" is not a list.`);
+    }
+    const problems = await DataStore.validateSnapshot(snap);
+    if (problems.length) throw new Error(`Backup failed validation (${problems.length}${problems.length >= 20 ? '+' : ''} problem(s)), e.g. ${problems.slice(0, 3).join('; ')}`);
     const next = { schemaVersion: snap.schemaVersion, savedAt: null, collections: {} };
     for (const c of COLLECTIONS) next.collections[c] = Array.isArray(snap.collections[c]) ? snap.collections[c] : [];
     const backup = this.snapshot;

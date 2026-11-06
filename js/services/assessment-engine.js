@@ -27,7 +27,18 @@ const rank = (s) => {
 export const PRIORITY_LABELS = { P1: 'Immediate', P2: 'High', P3: 'Medium', P4: 'Low' };
 
 // ------------------------------------------------------------ name matching
+const normCache = new Map();
 export function normaliseName(s) {
+  const key = String(s || '');
+  let v = normCache.get(key);
+  if (v !== undefined) return v;
+  v = normaliseNameUncached(key);
+  if (normCache.size > 50000) normCache.clear();
+  normCache.set(key, v);
+  return v;
+}
+
+function normaliseNameUncached(s) {
   return String(s || '')
     .toLowerCase()
     .replace(/&/g, 'and')
@@ -99,8 +110,8 @@ export function matchProduct(cve, sw, aliases = buildAliasMaps()) {
 }
 
 // ------------------------------------------------------------ impact
-export function impactForSoftware(store, softwareId) {
-  const deployments = store.find('deployments', (d) => d.softwareId === softwareId);
+export function impactForSoftware(store, softwareId, depsBySoftware = null) {
+  const deployments = depsBySoftware ? (depsBySoftware.get(softwareId) || []) : store.find('deployments', (d) => d.softwareId === softwareId);
   const appMap = new Map();
   const infra = new Map();
   const accounts = new Map();
@@ -244,14 +255,20 @@ export function priorityFor(status, cve, impact) {
  * Assess a single CVE against a single software record.
  * Returns null when there is no product relationship worth reporting.
  */
-export function assessPair(cve, sw, { store, aliases, settings = {}, reviews = [], now = Date.now() }) {
+export function assessPair(cve, sw, { store, aliases, settings = {}, reviews = [], now = Date.now(), cache = null }) {
   const match = matchProduct(cve, sw, aliases);
   if (!match.type) return null;
   const versionEval = evaluateVersion(sw.version, cve.affectedVersions);
   if (match.type === 'partial' && versionEval.result === 'out-of-range') return null;
-  const impact = impactForSoftware(store, sw.id);
+  let impact;
+  if (cache) {
+    impact = cache.impact.get(sw.id);
+    if (!impact) { impact = impactForSoftware(store, sw.id, cache.depsBySoftware); cache.impact.set(sw.id, impact); }
+  } else {
+    impact = impactForSoftware(store, sw.id);
+  }
   const computedStatus = computeStatus(match, versionEval);
-  const review = reviews.find((r) => r.cveId === cve.id && r.softwareId === sw.id) || null;
+  const review = (cache ? cache.reviews.get(`${cve.id}|${sw.id}`) : reviews.find((r) => r.cveId === cve.id && r.softwareId === sw.id)) || null;
   const status = review ? review.status : computedStatus;
 
   const evidence = [];
@@ -299,15 +316,67 @@ export function assessPair(cve, sw, { store, aliases, settings = {}, reviews = [
   };
 }
 
-/** Assess one CVE against the whole inventory. */
-export function assessCve(cve, store, opts = {}) {
+/**
+ * Index software by canonical vendor/product so each CVE is only compared
+ * with plausible candidates instead of the whole inventory.
+ */
+export function buildSoftwareIndex(software, aliases) {
+  const byProduct = new Map();
+  const byVendor = new Map();
+  const push = (map, k, e) => { if (!k) return; if (!map.has(k)) map.set(k, []); map.get(k).push(e); };
+  for (const sw of software) {
+    const p = canonical(aliases.product, sw.product);
+    const v = canonical(aliases.vendor, sw.vendor);
+    const cpe = parseCpe(sw.cpe);
+    push(byProduct, p, sw);
+    push(byVendor, v, sw);
+    if (cpe) { push(byProduct, cpe.product, sw); push(byVendor, cpe.vendor, sw); }
+  }
+  return { byProduct, byVendor, productKeys: [...byProduct.keys()], vendorKeys: [...byVendor.keys()] };
+}
+
+function candidatesFor(cve, index, aliases) {
+  const cv = canonical(aliases.vendor, cve.vendor);
+  const cp = canonical(aliases.product, cve.product);
+  const out = new Set(index.byProduct.get(cp) || []);
+  for (const vk of index.vendorKeys) {
+    if (vk === cv || (cv && Math.min(vk.length, cv.length) >= 4 && (vk.startsWith(cv) || cv.startsWith(vk)))) {
+      for (const sw of index.byVendor.get(vk)) out.add(sw);
+    }
+  }
+  if (cp && cp.length >= 5) {
+    for (const pk of index.productKeys) {
+      if (pk !== cp && pk.length >= 5 && (pk.includes(cp) || cp.includes(pk))) for (const sw of index.byProduct.get(pk)) out.add(sw);
+    }
+  }
+  return out;
+}
+
+function prepareContext(store, opts = {}) {
   const settings = opts.settings || store.getSettings();
   const aliases = opts.aliases || buildAliasMaps(settings);
-  const reviews = opts.reviews || store.all('assessmentReviews');
-  const now = opts.now || Date.now();
+  const reviewList = opts.reviews || store.all('assessmentReviews');
+  const depsBySoftware = new Map();
+  for (const d of store.all('deployments')) {
+    if (!depsBySoftware.has(d.softwareId)) depsBySoftware.set(d.softwareId, []);
+    depsBySoftware.get(d.softwareId).push(d);
+  }
+  return {
+    settings,
+    aliases,
+    reviews: reviewList,
+    now: opts.now || Date.now(),
+    index: opts.index || buildSoftwareIndex(store.all('software'), aliases),
+    cache: { impact: new Map(), depsBySoftware, reviews: new Map(reviewList.map((r) => [`${r.cveId}|${r.softwareId}`, r])) },
+  };
+}
+
+/** Assess one CVE against the whole inventory. */
+export function assessCve(cve, store, opts = {}) {
+  const ctx = opts.cache ? opts : prepareContext(store, opts);
   const findings = [];
-  for (const sw of store.all('software')) {
-    const f = assessPair(cve, sw, { store, aliases, settings, reviews, now });
+  for (const sw of candidatesFor(cve, ctx.index, ctx.aliases)) {
+    const f = assessPair(cve, sw, { store, ...ctx });
     if (f) findings.push(f);
   }
   findings.sort((a, b) => rank(a.status) - rank(b.status) || a.softwareId.localeCompare(b.softwareId));
@@ -349,14 +418,8 @@ function summarise(cve, findings) {
 
 /** Assess every CVE. Returns an array of {cve, findings, summary}. */
 export function assessAll(store, opts = {}) {
-  const settings = store.getSettings();
-  const shared = {
-    settings,
-    aliases: buildAliasMaps(settings),
-    reviews: store.all('assessmentReviews'),
-    now: opts.now || Date.now(),
-  };
-  return store.all('vulnerabilities').map((cve) => assessCve(cve, store, shared));
+  const ctx = prepareContext(store, opts);
+  return store.all('vulnerabilities').map((cve) => assessCve(cve, store, ctx));
 }
 
 /** Findings that involve a particular application. */

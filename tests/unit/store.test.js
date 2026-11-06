@@ -75,3 +75,16 @@ test('LocalStorageProvider persists and reloads', async () => {
   const s2 = await new DataStore(new LocalStorageProvider(opts)).init();
   assert.equal(s2.get('applications', 'APP-007').notes, 'changed');
 });
+
+test('backup restore rejects invalid or tampered snapshots', async () => {
+  const store = await newStore();
+  const good = store.exportSnapshot();
+  assert.deepEqual(await DataStore.validateSnapshot(good), []);
+  const bad = JSON.parse(JSON.stringify(good));
+  bad.collections.deployments.push({ id: 'DEP-9999', applicationId: 'APP-404', softwareId: 'SW-001', environment: 'Production' });
+  bad.collections.awsAccounts[0].accountId = '12';
+  await assert.rejects(() => store.importSnapshot(bad), /failed validation/);
+  await assert.rejects(() => store.importSnapshot({ schemaVersion: 1, collections: { applications: 'x' } }), /not a list/);
+  await store.importSnapshot(good);
+  assert.equal(store.count('applications'), 10);
+});

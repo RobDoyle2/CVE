@@ -78,7 +78,15 @@ function renderList(el, ctx) {
   const state = { q: query.q || '', category: query.category || '', verification: query.verification || '', review: '', env: '', vendor: '', exposure: query.exposure || '' };
   const canEdit = session.canContribute();
   const results = cachedAssessAll(store);
-  const exposure = (id) => findingsForSoftware(results, id).filter((x) => ['Confirmed affected', 'Potentially affected', 'Requires investigation', 'Unable to determine'].includes(x.finding.status));
+  const openBySoftware = new Map();
+  for (const r of results) {
+    for (const f of r.findings) {
+      if (!['Confirmed affected', 'Potentially affected', 'Requires investigation', 'Unable to determine'].includes(f.status)) continue;
+      if (!openBySoftware.has(f.softwareId)) openBySoftware.set(f.softwareId, []);
+      openBySoftware.get(f.softwareId).push(f);
+    }
+  }
+  const exposure = (id) => openBySoftware.get(id) || [];
 
   el.innerHTML = `
     ${pageHeader({

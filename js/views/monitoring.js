@@ -163,7 +163,7 @@ function renderNotifications(el, ctx) {
         <li>
           <div class="icon" style="${n.level === 'critical' ? 'background:#ffe8ec;color:var(--st-red)' : ''}">${n.level === 'info' ? icons.bell : icons.alert}</div>
           <div>
-            <div><a class="row-link" href="${esc(n.link || '#/assessments')}">${esc(n.title)}</a> ${n.read ? '' : '<span class="pill red">new</span>'}</div>
+            <div><a class="row-link" href="${esc(/^#\/[\w\-/?=&.]*$/.test(n.link || '') ? n.link : '#/assessments')}">${esc(n.title)}</a> ${n.read ? '' : '<span class="pill red">new</span>'}</div>
             <div class="small">${esc(n.message)}</div>
             <div class="small muted">To: ${esc(n.audience || '—')}</div>
           </div>

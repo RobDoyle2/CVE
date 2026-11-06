@@ -12,7 +12,8 @@ export class TableController {
    */
   constructor(el, opts) {
     this.el = el;
-    this.opts = { rowKey: 'id', empty: 'No records match the current filters.', ...opts };
+    this.opts = { rowKey: 'id', empty: 'No records match the current filters.', pageSize: 100, ...opts };
+    this.limit = this.opts.pageSize;
     this.sort = opts.initialSort || null;
     this.expanded = new Set();
     el.addEventListener('click', (e) => this.onClick(e));
@@ -27,14 +28,16 @@ export class TableController {
     const col = this.opts.columns.find((c) => c.key === this.sort.key);
     if (!col) return rows;
     const acc = col.sort || ((r) => r[col.key]);
-    return rows.sort((a, b) => {
-      const va = acc(a); const vb = acc(b);
+    // Compute each sort key once per render (keys can involve relationship lookups).
+    const keyed = rows.map((r) => ({ r, k: acc(r) }));
+    return keyed.sort((x, y) => {
+      const va = x.k; const vb = y.k;
       if (va === vb) return 0;
       if (va === undefined || va === null || va === '') return 1;
       if (vb === undefined || vb === null || vb === '') return -1;
       if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * this.sort.dir;
       return String(va).localeCompare(String(vb), undefined, { numeric: true }) * this.sort.dir;
-    });
+    }).map((x) => x.r);
   }
 
   render() {
@@ -51,7 +54,8 @@ export class TableController {
       const aria = sortable ? `aria-sort="${active ? (this.sort.dir === 1 ? 'ascending' : 'descending') : 'none'}"` : '';
       return `<th class="${sortable ? 'sortable' : ''} ${c.className || ''}" ${sortable ? `data-sort="${esc(c.key)}" tabindex="0"` : ''} ${aria} scope="col">${esc(c.label)}${active ? (this.sort.dir === 1 ? ' ▲' : ' ▼') : ''}</th>`;
     }).join('')}`;
-    const body = rows.map((r) => {
+    const visible = rows.slice(0, this.limit);
+    const body = visible.map((r) => {
       const id = r[rowKey];
       const isOpen = expand && this.expanded.has(id);
       const main = `<tr class="${isOpen ? 'row-expanded' : ''} ${rowClass ? rowClass(r) : ''}" data-row="${esc(id)}">
@@ -61,11 +65,17 @@ export class TableController {
       const detail = isOpen ? `<tr class="detail-row"><td colspan="${colCount}">${expand(r)}</td></tr>` : '';
       return main + detail;
     }).join('');
-    this.el.innerHTML = `<div class="table-wrap"><table class="data">${caption ? `<caption class="sr-only">${esc(caption)}</caption>` : ''}<thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+    this.el.innerHTML = `<div class="table-wrap"><table class="data">${caption ? `<caption class="sr-only">${esc(caption)}</caption>` : ''}<thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>${rows.length > visible.length
+      ? `<div class="text-right mt-1"><span class="small muted">Showing ${visible.length} of ${rows.length}</span> <button type="button" class="btn btn-sm" data-more>Show ${Math.min(this.opts.pageSize, rows.length - visible.length)} more</button></div>` : ''}`;
     return rows;
   }
 
   onClick(e) {
+    if (e.target.closest('[data-more]')) {
+      this.limit += this.opts.pageSize;
+      this.render();
+      return;
+    }
     const th = e.target.closest('th[data-sort]');
     if (th && this.el.contains(th)) {
       const key = th.dataset.sort;

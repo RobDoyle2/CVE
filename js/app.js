@@ -154,6 +154,15 @@ async function main() {
     toast(`Now acting as ${session.user.name} (${session.user.role}).`, 'success', 2500);
   });
 
+  // Last-resort error reporting so failures are visible rather than silent.
+  window.addEventListener('unhandledrejection', (e) => {
+    console.error(e.reason);
+    toast(`Unexpected error: ${e.reason && e.reason.message ? e.reason.message : e.reason}`, 'error', 7000);
+  });
+  window.addEventListener('error', (e) => {
+    if (e.message) toast(`Unexpected error: ${e.message}`, 'error', 7000);
+  });
+
   renderTopbar();
   router.resolve();
 

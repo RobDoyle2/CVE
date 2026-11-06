@@ -297,5 +297,38 @@ export const workflows = [
       return 'ok';
     },
   },
+  {
+    name: 'security: HTML/script in data is rendered inert across pages',
+    async run(page, { base }) {
+      const payload = '<img src=x onerror="window.__xss=1"><script>window.__xss=2</script>';
+      await page.evaluate(async (p) => {
+        const s = window.__vmt.store;
+        await s.update('applications', 'APP-001', { name: `Portal ${p}`, notes: p }, { validate: false });
+        await s.update('software', 'SW-001', { product: `Tomcat ${p}` }, { validate: false });
+        await s.update('vulnerabilities', 'CVE-2099-10001', { title: p, description: p }, { validate: false });
+      }, payload);
+      for (const r of ['/dashboard', '/applications', '/applications/APP-001', '/software', '/software/SW-001', '/vulnerabilities', '/vulnerabilities/CVE-2099-10001', '/assessments', '/assessments/CVE-2099-10001', '/reports', '/review', '/settings?tab=audit']) {
+        await page.goto(`${base}#${r}`);
+        await page.waitForSelector('#view h1');
+        await page.waitForTimeout(100);
+      }
+      const xss = await page.evaluate(() => window.__xss);
+      assert(xss === undefined, `script executed: ${xss}`);
+      return 'ok';
+    },
+  },
+  {
+    name: 'settings: JSON backup downloads and restores',
+    async run(page, { base }) {
+      await page.goto(`${base}#/settings?tab=data`);
+      const [dl] = await Promise.all([page.waitForEvent('download'), page.click('#backup')]);
+      const file = await dl.path();
+      await page.evaluate(() => window.__vmt.store.remove('applications', 'APP-007'));
+      await page.setInputFiles('#restore-file', file);
+      await page.click('.modal-footer .btn-danger-solid');
+      await page.waitForFunction(() => !!window.__vmt.store.get('applications', 'APP-007'));
+      return 'ok';
+    },
+  },
 ];
 
