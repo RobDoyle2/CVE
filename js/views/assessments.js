@@ -9,6 +9,7 @@ import { openRecordForm } from '../ui/form.js';
 import { toast } from '../ui/toast.js';
 import { SEVERITIES } from '../models/lookups.js';
 import { cachedAssessAll, STATUS_ORDER, PRIORITY_LABELS, ENGINE_VERSION } from '../services/assessment-engine.js';
+import { exportButtons, bindExportButtons, downloadDataset } from './export-helpers.js';
 
 export function render(el, ctx) {
   if (ctx.params.id) return renderDetail(el, ctx);
@@ -31,7 +32,7 @@ function renderOverview(el, ctx) {
   const statusRows = STATUS_ORDER.map((s) => ({ label: s, value: findings.filter((f) => f.status === s).length, color: ASSESSMENT_COLORS[s], href: `#/assessments?status=${encodeURIComponent(s)}` }));
 
   el.innerHTML = `
-    ${pageHeader({ title: 'Impact Assessments', subtitle: 'Cross-reference of every CVE in the register against the software inventory, applications and infrastructure.' })}
+    ${pageHeader({ title: 'Impact Assessments', subtitle: 'Cross-reference of every CVE in the register against the software inventory, applications and infrastructure.', actions: exportButtons('assessments') })}
     ${SAFETY_NOTICE}
     <div class="grid grid-6">
       ${statCard({ label: 'CVEs needing attention', value: open.length, foot: `of ${results.length} in register`, color: 'var(--st-orange)' })}
@@ -106,6 +107,7 @@ function renderOverview(el, ctx) {
         <div class="small muted">${f.impact.applications.map((a) => esc(a.name)).join(', ') || 'No applications recorded'}</div>
       </div>`).join('')}</div>` : '<div class="detail-panel"><div class="small muted">No software in the inventory matches this CVE\'s vendor/product. This reflects the inventory as recorded; incomplete inventory may hide exposure.</div></div>'),
   });
+  bindExportButtons(el, (format) => downloadDataset('assessments', store, format, 'Vulnerability assessments'));
   const refresh = () => { const rows = table.render(); el.querySelector('#count').textContent = `${rows.length} of ${results.length} CVEs`; };
   refresh();
   [['#flt-status', 'status'], ['#flt-priority', 'priority'], ['#flt-sev', 'severity'], ['#flt-prod', 'prodOnly']]

@@ -12,6 +12,7 @@ import {
 } from '../services/relationships.js';
 import { onCreate, onEdit } from '../services/workflow.js';
 import { confirmAndDelete, openDeploymentForm, readOnlyNotice } from './shared.js';
+import { exportButtons, bindExportButtons, downloadDataset } from './export-helpers.js';
 import { cachedAssessAll, findingsForApplication } from '../services/assessment-engine.js';
 import { assessmentPill, severityPill, priorityPill } from '../ui/components.js';
 
@@ -78,7 +79,7 @@ function renderList(el, ctx) {
     ${pageHeader({
       title: 'Applications',
       subtitle: 'Inventory of applications and services, their owners, environments, infrastructure and software.',
-      actions: `${canEdit ? button('Add application', { variant: 'primary', icon: 'plus', attrs: 'id="add-app"' }) : ''}`,
+      actions: `${exportButtons('applications')}${canEdit ? button('Add application', { variant: 'primary', icon: 'plus', attrs: 'id="add-app"' }) : ''}`,
     })}
     ${readOnlyNotice(session)}
     <div class="card">
@@ -141,6 +142,7 @@ function renderList(el, ctx) {
   const bind = (id, key) => el.querySelector(id).addEventListener('change', (e) => { state[key] = e.target.value; refresh(); });
   bind('#flt-crit', 'criticality'); bind('#flt-env', 'environment'); bind('#flt-internet', 'internet'); bind('#flt-fn', 'fn'); bind('#flt-review', 'review');
 
+  bindExportButtons(el, (format) => downloadDataset('applications', store, format, 'Applications'));
   const addBtn = el.querySelector('#add-app');
   if (addBtn) addBtn.addEventListener('click', () => openAppForm(ctx, null, refresh));
   el.querySelector('#table').addEventListener('click', async (e) => {

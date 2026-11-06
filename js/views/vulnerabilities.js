@@ -10,6 +10,7 @@ import { SEVERITIES, EXPLOITATION_STATUS, severityFromScore } from '../models/lo
 import { cachedAssessAll, STATUS_ORDER } from '../services/assessment-engine.js';
 import { describeExpression } from '../services/version.js';
 import { confirmAndDelete } from './shared.js';
+import { exportButtons, bindExportButtons, downloadDataset } from './export-helpers.js';
 
 export function render(el, ctx) {
   if (ctx.params.id) return renderDetail(el, ctx);
@@ -47,7 +48,7 @@ function renderList(el, ctx) {
     ${pageHeader({
       title: 'Vulnerabilities (CVEs)',
       subtitle: 'Register of vulnerabilities under monitoring, with automated cross-reference against the inventory.',
-      actions: canWrite ? button('Add vulnerability', { variant: 'primary', icon: 'plus', attrs: 'id="add"' }) : '',
+      actions: `${exportButtons('vulnerabilities')}${canWrite ? button('Add vulnerability', { variant: 'primary', icon: 'plus', attrs: 'id="add"' }) : ''}`,
     })}
     <div class="card">
       <div class="toolbar">
@@ -98,6 +99,7 @@ function renderList(el, ctx) {
   el.querySelector('#q').addEventListener('input', debounce((e) => { state.q = e.target.value; refresh(); }, 150));
   [['#flt-sev', 'severity'], ['#flt-exp', 'exploitation'], ['#flt-status', 'status'], ['#flt-vendor', 'vendor']]
     .forEach(([id, k]) => el.querySelector(id).addEventListener('change', (e) => { state[k] = e.target.value; refresh(); }));
+  bindExportButtons(el, (format) => downloadDataset('vulnerabilities', store, format, 'Vulnerabilities'));
   const add = el.querySelector('#add');
   if (add) add.addEventListener('click', () => openCveForm(ctx, null, () => renderList(el, ctx)));
   el.querySelector('#table').addEventListener('click', async (e) => {

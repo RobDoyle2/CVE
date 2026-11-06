@@ -167,5 +167,77 @@ export const workflows = [
       return 'ok';
     },
   },
+  {
+    name: 'import: template download, validation preview, confirm import with relationships',
+    async run(page, { base }) {
+      await page.goto(`${base}#/data`);
+      await page.selectOption('#imp-type', 'software');
+      const [dl] = await Promise.all([page.waitForEvent('download'), page.click('#tpl')]);
+      assert(dl.suggestedFilename() === 'template-software.csv', 'template filename');
+      const csv = [
+        'id,vendor,product,category,version,verificationStatus,applicationIds,environment,infrastructureId,deploymentLocation',
+        ',Example Co,Widget,Library / dependency,1.2.3,Verified,APP-002,,INF-004,lib/widget.jar',
+        ',Apache Software Foundation,Tomcat,Web server,9.0.80,Verified,,,,',
+        ',Bad Co,,Nonsense,1,Maybe,APP-999,,,',
+      ].join('\n');
+      await page.setInputFiles('#file', { name: 'sw.csv', mimeType: 'text/csv', buffer: Buffer.from(csv) });
+      await page.waitForSelector('#preview table');
+      const summary = await page.locator('#summary').textContent();
+      assert(/1 new/.test(summary) && /1 duplicates/.test(summary) && /1 with errors/.test(summary), `summary: ${summary}`);
+      const before = await page.evaluate(() => window.__vmt.store.count('software'));
+      await page.click('#confirm');
+      await page.waitForSelector('#summary .notice.success');
+      const after = await page.evaluate(() => ({ n: window.__vmt.store.count('software'), dep: window.__vmt.store.find('deployments', (d) => d.location === 'lib/widget.jar').length }));
+      assert(after.n === before + 1 && after.dep === 1, `expected 1 new software with deployment, got ${JSON.stringify(after)}`);
+      return 'ok';
+    },
+  },
+  {
+    name: 'export: Excel workbook downloads and opens; report preview renders',
+    async run(page, { base, shotDir }) {
+      await page.goto(`${base}#/data?tab=export`);
+      const [dl] = await Promise.all([page.waitForEvent('download'), page.click('#all-xlsx')]);
+      const os = await import('node:os');
+      const file = `${os.tmpdir()}/vmt-e2e-${Date.now()}.xlsx`;
+      await dl.saveAs(file);
+      const { execFileSync } = await import('node:child_process');
+      const out = execFileSync('python3', ['-I', '-c', 'import openpyxl,sys; wb=openpyxl.load_workbook(sys.argv[1]); print(",".join(ws.title+":"+str(ws.max_row) for ws in wb.worksheets))', file]).toString().trim();
+      assert(out.includes('Applications:11') && out.includes('Assessments:'), `workbook sheets: ${out}`);
+      await page.goto(`${base}#/applications`);
+      const [csvDl] = await Promise.all([page.waitForEvent('download'), page.click('[data-export="applications"][data-format="csv"]')]);
+      assert(/^applications-\d{4}-\d{2}-\d{2}\.csv$/.test(csvDl.suggestedFilename()), csvDl.suggestedFilename());
+      await page.goto(`${base}#/reports`);
+      await page.click('[data-preview="quality"]');
+      const rows = await page.locator('#pv-body tbody tr').count();
+      assert(rows > 3, 'data quality report should have rows');
+      return out;
+    },
+  },
+  {
+    name: 'review queue: contributor submission is pending; analyst approves',
+    async run(page, { base }) {
+      await page.selectOption('#current-user', 'USR-03');
+      await page.goto(`${base}#/applications`);
+      await page.click('#add-app');
+      await page.fill('#f-name', 'Contributor App');
+      await page.fill('#f-businessOwner', 'X');
+      await page.fill('#f-technicalOwner', 'Y');
+      await page.selectOption('#f-criticality', 'Low');
+      await page.selectOption('#f-businessFunction', 'Other');
+      await page.check('input[name="environments"][value="Test"]');
+      await modalSave(page);
+      await page.waitForSelector('.modal', { state: 'detached' });
+      const st = await page.evaluate(() => window.__vmt.store.find('applications', (a) => a.name === 'Contributor App')[0]);
+      assert(st.reviewStatus === 'Pending review' && st.submittedBy === 'Jordan Lee', 'contributor record should be pending');
+      await page.selectOption('#current-user', 'USR-02');
+      await page.goto(`${base}#/review`);
+      await page.click(`[data-decide="Approved"][data-id="${st.id}"]`);
+      await page.waitForTimeout(200);
+      const after = await page.evaluate((id) => window.__vmt.store.get('applications', id), st.id);
+      assert(after.reviewStatus === 'Approved' && after.reviewedBy === 'Priya Shah', 'should be approved by analyst');
+      await page.selectOption('#current-user', 'USR-01');
+      return 'ok';
+    },
+  },
 ];
 

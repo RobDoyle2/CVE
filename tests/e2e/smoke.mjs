@@ -36,6 +36,8 @@ const ROUTES = [
   ['/monitoring', 'Monitoring'],
   ['/reports', 'Reports'],
   ['/settings', 'Settings'],
+  ['/review', 'Review Queue'],
+  ['/data', 'Import / Export'],
 ];
 
 let browser;
@@ -63,9 +65,9 @@ try {
   const { workflows } = await import('./workflows.mjs').catch(() => ({ workflows: [] }));
   for (const wf of workflows) {
     errors.length = 0;
-    await page.goto(base);
-    await page.evaluate(() => localStorage.clear());
     await page.goto(`${base}#/dashboard`);
+    await page.evaluate(() => localStorage.clear());
+    await page.reload();
     await page.waitForSelector('#view h1');
     try {
       const detail = await wf.run(page, { base, shotDir });

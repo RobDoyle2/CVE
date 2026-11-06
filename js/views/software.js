@@ -11,6 +11,7 @@ import { deploymentsForSoftware, applicationsForSoftware, environmentsForSoftwar
 import { cachedAssessAll, findingsForSoftware } from '../services/assessment-engine.js';
 import { onCreate, onEdit } from '../services/workflow.js';
 import { confirmAndDelete, openDeploymentForm, readOnlyNotice } from './shared.js';
+import { exportButtons, bindExportButtons, downloadDataset } from './export-helpers.js';
 
 export function render(el, ctx) {
   if (ctx.params.id) return renderDetail(el, ctx);
@@ -83,7 +84,7 @@ function renderList(el, ctx) {
     ${pageHeader({
       title: 'Software Inventory',
       subtitle: 'Software components (vendor, product and version) and where they are deployed.',
-      actions: canEdit ? button('Add software', { variant: 'primary', icon: 'plus', attrs: 'id="add"' }) : '',
+      actions: `${exportButtons('software')}${canEdit ? button('Add software', { variant: 'primary', icon: 'plus', attrs: 'id="add"' }) : ''}`,
     })}
     ${readOnlyNotice(session)}
     <div class="card">
@@ -150,6 +151,7 @@ function renderList(el, ctx) {
   el.querySelector('#q').addEventListener('input', debounce((e) => { state.q = e.target.value; refresh(); }, 150));
   [['#flt-cat', 'category'], ['#flt-vendor', 'vendor'], ['#flt-env', 'env'], ['#flt-ver', 'verification'], ['#flt-review', 'review'], ['#flt-exposure', 'exposure']]
     .forEach(([id, k]) => el.querySelector(id).addEventListener('change', (e) => { state[k] = e.target.value; refresh(); }));
+  bindExportButtons(el, (format) => downloadDataset('software', store, format, 'Software inventory'));
   const add = el.querySelector('#add');
   if (add) add.addEventListener('click', () => openSoftwareForm(ctx, null, refresh));
   el.querySelector('#table').addEventListener('click', async (e) => {

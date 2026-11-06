@@ -17,12 +17,14 @@ export const NAV = [
   { path: '/applications', label: 'Applications', icon: 'apps', load: () => import('./views/applications.js'), count: 'applications' },
   { path: '/software', label: 'Software Inventory', icon: 'package', load: () => import('./views/software.js'), count: 'software' },
   { path: '/infrastructure', label: 'Infrastructure', icon: 'server', load: () => import('./views/infrastructure.js') },
+  { path: '/review', label: 'Review Queue', icon: 'inbox', load: () => import('./views/review.js'), count: 'pendingReview' },
   { group: 'Vulnerability Management' },
   { path: '/vulnerabilities', label: 'Vulnerabilities (CVEs)', icon: 'bug', load: () => import('./views/vulnerabilities.js'), count: 'vulnerabilities' },
   { path: '/assessments', label: 'Impact Assessments', icon: 'target', load: () => import('./views/assessments.js') },
   { path: '/monitoring', label: 'Monitoring Sources', icon: 'radar', load: () => import('./views/monitoring.js') },
   { group: 'Insight & Administration' },
   { path: '/reports', label: 'Reports', icon: 'report', load: () => import('./views/reports.js') },
+  { path: '/data', label: 'Import / Export', icon: 'upload', load: () => import('./views/data.js') },
   { path: '/settings', label: 'Settings', icon: 'settings', load: () => import('./views/settings.js') },
 ];
 
@@ -78,7 +80,10 @@ async function main() {
   const renderNav = (activeSection) => {
     navEl.innerHTML = NAV.map((item) => {
       if (item.group) return `<div class="nav-group-label">${esc(item.group)}</div>`;
-      const count = item.count ? `<span class="nav-count">${store.count(item.count)}</span>` : '';
+      const n = item.count === 'pendingReview'
+        ? ['applications', 'software'].reduce((t, c) => t + store.find(c, (r) => r.reviewStatus === 'Pending review').length, 0)
+        : item.count ? store.count(item.count) : null;
+      const count = n !== null ? `<span class="nav-count">${n}</span>` : '';
       const active = item.path === activeSection ? 'active' : '';
       return `<a href="#${item.path}" class="${active}" ${active ? 'aria-current="page"' : ''}>${icons[item.icon]}<span>${esc(item.label)}</span>${count}</a>`;
     }).join('');
