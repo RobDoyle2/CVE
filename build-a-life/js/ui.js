@@ -161,6 +161,7 @@
     if (l) showAchievements(l);
     save();
     render();
+    goalFeedback(res.goalsDone);
     if (l && l.ended) endOfLife();
   }
 
@@ -504,6 +505,8 @@
     var l = life();
     if (!l) return '';
     if (l.ended) { S.screen = 'end'; return renderEnd(); }
+    if (!Array.isArray(l.goals) || l.goalsAge !== l.age) { G.ensureGoals(l); save(); }
+    var goalsLeft = G.goalsLeft(l);
     var t = G.town(l), st = BAL.STAGES[G.stage(l.age)];
     var choresLeft = l.chores.filter(function (c) { return !c.done; }).length;
     var tabs = TABS.map(function (tb) {
@@ -528,12 +531,13 @@
       '<div class="chips-row"><span class="chip-s">' + st.emoji + ' ' + st.name + '</span><span class="chip-s">' + t.emoji + ' ' + esc(t.name) + '</span></div>' +
       (status.indexOf(st.name) < 0 ? '<div class="chips-row"><span class="chip-s">' + status + '</span></div>' : '') +
       '</div></div><button class="btn look-btn" data-act="changeLook"><span>🪞</span> Change Your Look <small>· free!</small></button>' +
-      '<div class="coins-row"><span class="coins" title="Coins (pretend money)"><span class="coin-ico">🪙</span> ' + fmt(l.coins) + '</span><span class="year">📅 ' + l.year + '</span></div>' +
+      '<div class="coins-row"><span class="coins" title="Coins (pretend money)"><span class="coin-ico">🪙</span> ' + fmt(l.coins) + '</span><span class="stars-chip" title="Challenge stars">⭐ ' + fmt(l.totals.stars || 0) + '</span><span class="year">📅 ' + l.year + '</span></div>' +
       '<div class="energy" title="Energy: each activity uses one ⚡. Age up to get more!"><span class="energy-label">Energy</span>' + pips + '</div>' +
       '<div class="stats">' + stats + '</div>' +
-      '<button class="btn ageup" data-act="ageUp"><span class="cake">🎂</span> Age Up!<small>Go to age ' + (l.age + 1) + '</small></button>' +
+      (goalsLeft ? '<button class="btn ageup locked" data-act="ageUp"><span class="cake">🔒</span> Age Up<small>Finish ' + goalsLeft + ' more challenge' + (goalsLeft === 1 ? '' : 's') + ' first</small></button>'
+        : '<button class="btn ageup ready" data-act="ageUp"><span class="cake">🎂</span> Age Up!<small>Birthday ready — go to age ' + (l.age + 1) + '!</small></button>') +
       '</aside>' +
-      '<section class="play"><nav class="tabs" aria-label="Game sections">' + tabs + '</nav>' +
+      '<section class="play">' + challengesCard(l) + '<nav class="tabs" aria-label="Game sections">' + tabs + '</nav>' +
       '<div class="panel card pop" id="panel">' + renderPanel(l) + '</div></section></main>';
   }
 
@@ -552,7 +556,11 @@
     }
   }
   function head(emoji, title, sub) { return '<div class="panel-head"><span class="panel-emoji">' + emoji + '</span><div><h2>' + title + '</h2>' + (sub ? '<p>' + sub + '</p>' : '') + '</div></div>'; }
-  function energyNote(l) { return l.energy ? '<span class="energy-note">⚡ ' + l.energy + ' energy left this year</span>' : '<div class="tip">😴 Out of energy! Press <b>🎂 Age Up</b> to rest and start a new year.</div>'; }
+  function energyNote(l) {
+    if (l.energy) return '<span class="energy-note">⚡ ' + l.energy + ' energy left</span>';
+    if (G.goalsLeft(l)) return '<div class="tip rest-tip">😴 Out of energy! Have a rest to recharge, then finish your challenges. ' + btn('😴 Rest & recharge', 'do', a('fn', 'rest'), 'small primary') + '</div>';
+    return '<div class="tip">😴 Out of energy — and all your challenges are done! Press <b>🎂 Age Up</b> for your birthday.</div>';
+  }
 
   function panelActivities(l) {
     var list = G.activities(l).map(function (x) {
@@ -826,7 +834,7 @@
     var facts = [
       ['🎂', 'Lived to', s.age], ['💼', 'Best job', s.job], ['🎓', 'Education', s.edu], ['📍', 'Home town', s.townEmoji + ' ' + s.town],
       ['👶', 'Children', s.children], ['🍼', 'Grandchildren', s.grandchildren], ['🤝', 'Friends made', s.friends], ['🐾', 'Pets adopted', s.pets],
-      ['🪙', 'Coins earned', fmt(s.earned)], ['😊', 'Average happiness', s.avgHappy], ['🌟', 'Stickers', s.stickers + ' / ' + BAL.ACHIEVEMENTS.length], ['💍', 'Married', s.married ? 'Yes 💕' : 'No']
+      ['🪙', 'Coins earned', fmt(s.earned)], ['😊', 'Average happiness', s.avgHappy], ['🌟', 'Stickers', s.stickers + ' / ' + BAL.ACHIEVEMENTS.length], ['💍', 'Married', s.married ? 'Yes 💕' : 'No'], ['🎯', 'Challenges done', fmt(l.totals.challenges || 0)], ['⭐', 'Challenge stars', fmt(l.totals.stars || 0)]
     ].map(function (f) { return '<div class="fact"><span>' + f[0] + '</span><small>' + f[1] + '</small><b>' + esc(f[2]) + '</b></div>'; }).join('');
     var highlights = l.log.filter(function (e) { return !/^Sticker unlocked/.test(e.t); }).filter(function (e) { return ['👶', '🎒', '🎓', '💼', '⬆️', '💍', '💒', '🏠', '🏡', '🐶', '🐱', '🏖️', '🪪', '🗺️', '👵', '🤝'].indexOf(e.e) >= 0 || /Bought|Adopted|Married|Promoted|Graduated|Got a job/.test(e.t); }).slice(0, 14)
       .map(function (e) { return '<li><span class="tl-age">' + e.age + '</span><span class="tl-e">' + e.e + '</span><span>' + esc(e.t) + '</span></li>'; }).join('');
@@ -848,10 +856,164 @@
       '</div></div></main>';
   }
 
+  /* ====================== Challenges ====================== */
+  function ordinal(n) { var s = ['th', 'st', 'nd', 'rd'], v = n % 100; return n + (s[(v - 20) % 10] || s[v] || s[0]); }
+  function isFixed(l, c) { return c.fixed && c.fixed.indexOf(l.age) >= 0; }
+
+  function goalStatus(l, g, c) {
+    if (g.done) return '';
+    var t = c.track;
+    if (t.act && g.n > 1) return '<div class="goal-prog">' + bar(g.p / g.n * 100, 'linear-gradient(90deg,#FFD43B,#FF9F1C)', c.name + ' progress') + '<span>' + g.p + ' / ' + g.n + '</span></div>';
+    if (t.chores) { var d = l.chores.filter(function (x) { return x.done; }).length; return '<div class="goal-prog">' + bar(d / Math.max(1, l.chores.length) * 100, 'linear-gradient(90deg,#69DB7C,#20C997)', 'Daily jobs') + '<span>' + d + ' / ' + l.chores.length + '</span></div>'; }
+    return '';
+  }
+
+  function challengesCard(l) {
+    var st = G.stageInfo(l.age), left = G.goalsLeft(l);
+    var journey = BAL.LIFE_STAGES.map(function (s) {
+      var cls = s.id === st.id ? ' on' : (s.max < l.age ? ' past' : '');
+      return '<span class="jstep' + cls + '" style="--sc:' + s.color + '" title="' + esc(s.name) + ' (' + s.min + (s.max > 200 ? '+' : '–' + s.max) + ')"><span class="j-emoji">' + (s.max < l.age ? '✅' : s.emoji) + '</span><span class="j-name">' + esc(s.name) + '</span></span>';
+    }).join('');
+    var cards = l.goals.map(function (g, i) {
+      var c = G.challenge(g.id); if (!c) return '';
+      var rw = G.goalReward(l, c);
+      var go = g.done ? '<span class="goal-done">✓</span>' : (c.track.game ? btn('▶ Play', 'playGame', a('i', i), 'small primary') : btn('Go ➜', 'goGoal', a('i', i), 'small primary'));
+      var swap = !g.done && !l.flags.swapped && !isFixed(l, c) ? '<button class="swap" data-act="swapGoal"' + a('i', i) + ' title="Swap for a different challenge (once a year)" aria-label="Swap ' + esc(c.name) + ' for a different challenge">🔄</button>' : '';
+      return '<div class="goal' + (g.done ? ' done' : '') + (isFixed(l, c) ? ' milestone' : '') + '"><span class="goal-emoji">' + c.emoji + '</span>' +
+        '<div class="grow"><div class="goal-name"><b>' + esc(c.name) + '</b>' + (isFixed(l, c) ? '<span class="tag milestone-tag">⭐ Big moment</span>' : '') + '</div>' +
+        '<div class="goal-desc">' + esc(c.desc) + '</div>' + (c.hint && !g.done ? '<div class="goal-hint">💡 ' + esc(c.hint) + '</div>' : '') +
+        goalStatus(l, g, c) + '<div class="goal-reward">Reward: 🪙 ' + fmt(rw.coins) + ' · ' + '⭐'.repeat(rw.stars) + '</div></div>' +
+        '<div class="goal-btns">' + go + swap + '</div></div>';
+    }).join('');
+    return '<div class="goals card pop" id="goals" style="--sc:' + st.color + '">' +
+      '<div class="goals-head"><span class="stage-badge">' + st.emoji + '</span><div class="grow"><h2>Age ' + l.age + ' Challenges</h2>' +
+      '<p>' + (left ? 'Finish <b>' + left + '</b> more to unlock your ' + ordinal(l.age + 1) + ' birthday! 🎂' : '🎉 All done! Your ' + ordinal(l.age + 1) + ' birthday is ready — press <b>Age Up</b>!') + '</p></div>' +
+      '<div class="stars-total" title="Challenge stars">⭐ ' + fmt(l.totals.stars || 0) + '</div></div>' +
+      '<div class="journey" aria-label="Life stages">' + journey + '</div>' +
+      '<div class="goal-list">' + cards + '</div></div>';
+  }
+
+  function goalFeedback(done) {
+    var l = life();
+    if (!done || !done.length || !l) return;
+    done.forEach(function (r, k) {
+      setTimeout(function () { toast('Challenge complete: ' + r.name + '! +' + fmt(r.coins) + ' coins ' + '⭐'.repeat(r.stars), r.emoji, 'good'); BAL.sound('sticker'); confetti(false); }, 250 + k * 350);
+    });
+    if (done.some(function (r) { return r.all; }) && !l.ended) {
+      openModal({ emoji: '🏆', title: 'All challenges complete!', cls: 'sticker-modal',
+        html: '<p class="lead">Amazing work, <b>' + esc(l.name) + '</b>! You finished every challenge for age ' + l.age + ' and earned a bonus ⭐.</p><p>Your <b>' + ordinal(l.age + 1) + ' birthday</b> is ready whenever you are!</p>',
+        buttons: [{ label: '🎂 Age up now!', cls: 'pink', fn: function () { setTimeout(ageUp, 50); } }, { label: 'Keep playing', cls: 'ghost' }],
+        onOpen: function () { BAL.sound('tada'); confetti(true); } });
+    }
+  }
+
+  function stageModal(st) {
+    var s = BAL.STAGES[st];
+    var sample = BAL.CHALLENGES.filter(function (c) { return c.stage === st; }).slice(0, 6).map(function (c) { return '<li><span>' + c.emoji + '</span> ' + esc(c.name) + '</li>'; }).join('');
+    openModal({ emoji: '<span class="stage-big" style="--sc:' + s.color + '">' + s.emoji + '</span>', title: 'You\'re a ' + esc(s.name) + ' now!',
+      html: '<p class="muted">Ages ' + s.min + (s.max > 200 ? '+' : '–' + s.max) + '</p><p class="lead">' + esc(s.intro) + '</p><p><b>New challenges include:</b></p><ul class="year-lines two-col">' + sample + '</ul>',
+      buttons: [{ label: 'Let\'s do this! 💪' }], onOpen: function () { BAL.sound('tada'); confetti(false); } });
+  }
+
+  /* ---------- Mini-games ---------- */
+  var $game;
+  function playGame(i) {
+    var l = life(), g = l.goals[i], c = G.challenge(g.id);
+    if (!g || g.done || !c.track.game) return;
+    S.game = { i: i, c: c, type: c.track.game, kind: c.track.kind, qi: 0, score: 0, results: [], picked: null, busy: false };
+    if (S.game.type === 'quiz') S.game.quiz = G.makeQuiz(c.track.kind, l.age);
+    else { S.game.find = G.makeFind(c.track.kind); S.game.found = []; }
+    BAL.sound('click');
+    renderMini();
+  }
+  function closeMini() { S.game = null; stopSpeaking(); $game.innerHTML = ''; $game.hidden = true; document.body.classList.remove('modal-open'); }
+  function renderMini() {
+    var m = S.game; if (!m) return closeMini();
+    $game.hidden = false; document.body.classList.add('modal-open');
+    var body = '';
+    if (m.result) {
+      var passed = m.result.ok;
+      body = '<div class="mg-result">' + (passed ? '<div class="mg-big">🌟</div><h3>' + (m.score === m.total ? 'Perfect!' : 'You did it!') + '</h3>' : '<div class="mg-big">💪</div><h3>So close!</h3>') +
+        (m.type === 'quiz' ? '<p class="lead">You got <b>' + m.score + ' out of ' + m.total + '</b> right.</p>' : '') +
+        '<p>' + esc(m.result.msg) + '</p></div>' +
+        '<div class="modal-btns">' + (passed ? btn('Hooray! 🎉', 'gClose', '', 'primary big') : btn('🔄 Try again', 'gRetry', '', 'primary big') + btn('Later', 'gClose', '', 'ghost big')) + '</div>';
+    } else if (m.type === 'quiz') {
+      var q = m.quiz[m.qi];
+      var dots = m.quiz.map(function (x, k) { var r = m.results[k]; return '<span class="mg-dot' + (r === true ? ' right' : r === false ? ' wrong' : k === m.qi ? ' now' : '') + '"></span>'; }).join('');
+      body = '<div class="mg-dots">' + dots + '</div><p class="mg-count">Question ' + (m.qi + 1) + ' of ' + m.quiz.length + (m.kind === 'exam' ? ' · get 3 right to pass' : ' · get ' + G.quizPass(m.kind, m.quiz.length) + ' right to win') + '</p>' +
+        '<div class="mg-q">' + esc(q.q) + '</div>' + (q.art ? '<div class="mg-art">' + q.art + '</div>' : '') +
+        '<div class="mg-opts">' + q.options.map(function (o) {
+          var cls = '';
+          if (m.picked !== null) { if (o === q.answer) cls = ' right'; else if (o === m.picked) cls = ' wrong'; }
+          return '<button class="mg-opt' + cls + '" data-act="gAnswer"' + a('v', o) + (m.picked !== null ? ' disabled' : '') + '>' + esc(o) + '</button>';
+        }).join('') + '</div>' +
+        (m.picked !== null ? '<p class="mg-feedback">' + (m.picked === q.answer ? '✅ Correct! Brilliant!' : '❌ Not quite — the answer is <b>' + esc(q.answer) + '</b>.') + '</p>' : '') +
+        '<div class="modal-btns">' + btn('Close', 'gClose', '', 'ghost') + '</div>';
+    } else {
+      var f = m.find;
+      body = '<p class="mg-q small-q">' + esc(f.title) + '</p><div class="mg-want">' + f.targets.map(function (t) { return '<span class="' + (m.found.indexOf(t) >= 0 ? 'got' : '') + '">' + t + '</span>'; }).join('') + '</div>' +
+        '<div class="mg-grid">' + f.cells.map(function (e, k) {
+          var got = m.found.indexOf(e) >= 0 && f.targets.indexOf(e) >= 0;
+          return '<button class="mg-cell' + (got ? ' found' : '') + (m.wrong === k ? ' nope' : '') + '" data-act="gCell"' + a('i', k) + (got ? ' disabled' : '') + ' aria-label="' + e + '">' + e + '</button>';
+        }).join('') + '</div><p class="mg-count">Found ' + m.found.length + ' of ' + f.targets.length + '</p>' +
+        '<div class="modal-btns">' + btn('Close', 'gClose', '', 'ghost') + '</div>';
+    }
+    $game.innerHTML = '<div class="modal-back"></div><div class="modal mg" role="dialog" aria-modal="true" aria-labelledby="mgtitle">' +
+      '<button class="speak" data-act="gSpeak" title="Read aloud" aria-label="Read aloud">🔊</button>' +
+      '<div class="mg-head"><span class="mg-emoji">' + m.c.emoji + '</span><h2 id="mgtitle">' + esc(m.c.name) + '</h2></div>' + body + '</div>';
+  }
+  function finishMini() {
+    var m = S.game, l = life();
+    m.total = m.type === 'quiz' ? m.quiz.length : m.find.targets.length;
+    var res = G.run(l, 'completeGame', m.i, m.score, m.total);
+    m.result = res;
+    save();
+    renderMini();
+    if (res.ok) { BAL.sound('tada'); confetti(true); toast(res.msg, res.emoji, 'good', res.diffs, res.coinsDelta); render(); goalFeedback(res.goalsDone); showAchievements(l); }
+    else BAL.sound('bad');
+  }
+  function miniClick(actName, el) {
+    var m = S.game; if (!m) return;
+    if (actName === 'gClose') { closeMini(); render(); return; }
+    if (actName === 'gRetry') { var i = m.i; closeMini(); playGame(i); return; }
+    if (actName === 'gSpeak') { var q = m.type === 'quiz' && !m.result ? m.quiz[m.qi] : null; speak(q ? q.q + '. ' + q.options.join(', or ') : (m.find && !m.result ? m.find.title : $game.innerText)); return; }
+    if (actName === 'gAnswer' && m.picked === null) {
+      var q2 = m.quiz[m.qi], v = el.getAttribute('data-v');
+      m.picked = v;
+      var right = v === q2.answer;
+      m.results[m.qi] = right;
+      if (right) m.score += 1;
+      BAL.sound(right ? 'good' : 'bad');
+      renderMini();
+      setTimeout(function () {
+        if (!S.game || S.game !== m) return;
+        m.picked = null; m.qi += 1;
+        if (m.qi >= m.quiz.length) finishMini(); else renderMini();
+      }, right ? 900 : 1700);
+      return;
+    }
+    if (actName === 'gCell') {
+      var k = +el.getAttribute('data-i'), e = m.find.cells[k];
+      if (m.find.targets.indexOf(e) >= 0) {
+        if (m.found.indexOf(e) < 0) { m.found.push(e); m.score += 1; BAL.sound('good'); }
+        m.wrong = null;
+        renderMini();
+        if (m.found.length === m.find.targets.length) setTimeout(finishMini, 500);
+      } else { m.wrong = k; BAL.sound('bad'); renderMini(); setTimeout(function () { if (S.game === m) { m.wrong = null; renderMini(); } }, 500); }
+    }
+  }
+
   /* ====================== Age up flow ====================== */
   function ageUp() {
     var l = life(); if (!l) return;
     var rep = G.ageUp(l);
+    if (rep && rep.blocked) {
+      BAL.sound('bad');
+      toast('Finish your ' + rep.left + ' challenge' + (rep.left === 1 ? '' : 's') + ' first to unlock your birthday! 🎯', '🔒', 'bad');
+      var gc = document.getElementById('goals');
+      if (gc) { gc.scrollIntoView({ behavior: reduced() ? 'auto' : 'smooth', block: 'start' }); gc.classList.remove('nudge'); void gc.offsetWidth; gc.classList.add('nudge'); }
+      return;
+    }
     save();
     if (!rep) return;
     S.tab = S.tab || 'activities';
@@ -871,6 +1033,7 @@
     rep.celebrations.forEach(function (c) {
       openModal({ emoji: c.e, title: esc(c.t), html: '<p class="lead">' + esc(c.d) + '</p>', buttons: [{ label: 'Hooray! 🎉' }], onOpen: function () { BAL.sound('tada'); confetti(false); } });
     });
+    if (rep.newStage && !rep.ended) stageModal(rep.newStage);
     if (rep.choice === 'future') futureModal();
     if (rep.event) eventModal(rep.event);
     showAchievements(l);
@@ -980,6 +1143,16 @@
       case 'tab': S.tab = d('id'); BAL.sound('click'); render(); var pn = document.getElementById('panel'); if (pn && window.innerWidth < 900) pn.scrollIntoView({ behavior: reduced() ? 'auto' : 'smooth', block: 'start' }); break;
       case 'shopCat': S.shopCat = d('id'); BAL.sound('click'); render(); break;
       case 'ageUp': ageUp(); break;
+      case 'playGame': playGame(+d('i')); break;
+      case 'swapGoal': act('swapGoal', +d('i')); break;
+      case 'goGoal': {
+        var gl = l.goals[+d('i')], gc2 = G.challenge(gl.id);
+        S.tab = gc2.tab || 'activities'; BAL.sound('click'); render();
+        var pnl = document.getElementById('panel'); if (pnl) pnl.scrollIntoView({ behavior: reduced() ? 'auto' : 'smooth', block: 'start' });
+        toast(gc2.desc + (gc2.hint ? ' ' + gc2.hint : ''), gc2.emoji, 'good');
+        break;
+      }
+      case 'gClose': case 'gRetry': case 'gSpeak': case 'gAnswer': case 'gCell': miniClick(actName, el); break;
       case 'do': {
         var a1 = d('a1'), fn = d('fn');
         if (fn === 'chore') a1 = +a1;
@@ -1042,6 +1215,8 @@
       '<ul class="year-lines">' +
       '<li><span>👶</span> You start as a baby and live a whole life, year by year.</li>' +
       '<li><span>⚡</span> Each year you have some <b>energy</b>. Use it on activities, studying, work, friends and pets.</li>' +
+      '<li><span>🎯</span> Every year you get <b>3 challenges</b>. Finish them all to unlock your next birthday! Tap <b>Go</b> or <b>Play</b> on a challenge to start it, and 🔄 to swap one you don\'t like (once a year).</li>' +
+      '<li><span>🗺️</span> Grow through 8 life stages: Baby, Toddler, Child, Teenager, Young Adult, Adult, Older Adult and Grandparent.</li>' +
       '<li><span>🎂</span> Press <b>Age Up</b> to have a birthday. Coins come in and bills go out.</li>' +
       '<li><span>😊</span> Keep your <b>Happiness, Health, Smarts and Fitness</b> high!</li>' +
       '<li><span>✅</span> Finish your <b>Daily Jobs</b> each year for a bonus.</li>' +
@@ -1076,6 +1251,7 @@
     $modal = document.getElementById('modal-root');
     $toasts = document.getElementById('toasts');
     $fx = document.getElementById('fx');
+    $game = document.getElementById('game-root');
     Store.load();
     var p = Store.active();
     var cur = life();

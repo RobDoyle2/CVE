@@ -12,13 +12,27 @@
     { id: 'fitness', name: 'Fitness', emoji: '💪', color: '#2EC4B6' }
   ];
 
-  BAL.STAGES = {
-    baby: { name: 'Baby', emoji: '🍼', energy: 4 },
-    child: { name: 'Child', emoji: '🧒', energy: 5 },
-    teen: { name: 'Teenager', emoji: '🧑‍🎤', energy: 6 },
-    adult: { name: 'Grown-up', emoji: '🧑', energy: 6 },
-    elder: { name: 'Golden Years', emoji: '🧓', energy: 5 }
-  };
+  // The eight stages of life. Each has its own challenges (see challenges.js).
+  BAL.LIFE_STAGES = [
+    { id: 'baby', name: 'Baby', emoji: '🍼', min: 0, max: 2, energy: 4, chores: 'baby', color: '#FFADC6',
+      intro: 'Giggle, play, nap and grow! Keep your happiness and health nice and high.' },
+    { id: 'toddler', name: 'Toddler', emoji: '🧸', min: 3, max: 5, energy: 5, chores: 'child', color: '#FFC078',
+      intro: 'Time to explore! Learn colours and counting, make friends and help tidy up.' },
+    { id: 'child', name: 'Child', emoji: '🧒', min: 6, max: 12, energy: 5, chores: 'child', color: '#FFE066',
+      intro: 'School days! Do school activities, finish your homework and make lots of friends.' },
+    { id: 'teen', name: 'Teenager', emoji: '🧑‍🎤', min: 13, max: 17, energy: 6, chores: 'teen', color: '#8CE99A',
+      intro: 'Big school! School projects, presentations and exams — then graduation!' },
+    { id: 'young', name: 'Young Adult', emoji: '🧑‍🎓', min: 18, max: 29, energy: 6, chores: 'adult', color: '#74C0FC',
+      intro: 'Your own adventure! Find a job, learn new skills and manage your money.' },
+    { id: 'adult', name: 'Adult', emoji: '🧑‍💼', min: 30, max: 49, energy: 6, chores: 'adult', color: '#B197FC',
+      intro: 'Run your household! Look after your family, pay the bills and keep everything ticking along.' },
+    { id: 'older', name: 'Older Adult', emoji: '🧑‍🦳', min: 50, max: 69, energy: 5, chores: 'adult', color: '#F783AC',
+      intro: 'Slow down and enjoy it! Hobbies, family time and — when you are ready — retirement.' },
+    { id: 'grand', name: 'Grandparent', emoji: '👵', min: 70, max: 999, energy: 5, chores: 'elder', color: '#FFD8A8',
+      intro: 'The golden years! Share stories, see the grandchildren and enjoy gentle hobbies.' }
+  ];
+  BAL.STAGES = {};
+  BAL.LIFE_STAGES.forEach(function (s) { BAL.STAGES[s.id] = s; });
 
   /* ---------- Looks ---------- */
   BAL.LOOKS = {

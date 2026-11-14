@@ -15,7 +15,8 @@ or serve the folder: `python3 -m http.server` and visit `http://localhost:8000/b
 1. **Make a player** — each person who plays gets their own profile.
 2. **Create a character** in 5 easy steps — name & identity, face & hair, clothes, accessories, family & home town.
    Each player can save up to 12 characters, and **every character has their own saved life**.
-3. **Use your ⚡ energy** each year on activities, studying, work, friends and pets.
+3. **Complete your 3 challenges** 🎯 each year — they unlock your next birthday! Tap **Go** to jump to the right place, or **Play** for a mini-game. Swap one you don't fancy with 🔄 (once a year).
+   Use your ⚡ energy on activities, studying, work, friends and pets; if it runs out before the challenges are done, **Rest & recharge**.
 4. **Tick off your daily jobs** ✅ for a bonus.
 5. **Tap 🪞 Change Your Look** whenever you like — it's always free.
 6. **Press 🎂 Age Up** to have a birthday — coins come in, bills go out, and life events happen.
@@ -30,7 +31,9 @@ or serve the folder: `python3 -m http.server` and visit `http://localhost:8000/b
 | 🪞 Change Your Look | Free at any time from the character card or the Shop: change name, identity, pronouns, face, hair, clothes and accessories, and plan outfits for future ages |
 | 👕 Clothing collections | A separate collection and saved outfit for **Babies, Toddlers, Children, Teenagers, Adults and Older Adults** — 19 tops, 21 trousers/shorts/skirts/dresses/all-in-ones and 17 shoe styles, each in 14 colours. Every outfit is free; only 3 special items (crown, cape, golden trainers) are unlocked with pretend coins in the Shop. All clothes are available to every character |
 | 🗺️ Places | 7 towns, cities and villages — each with different pay, prices and a yearly bonus. Grown-ups can move |
-| 🎂 Growing up | Year-by-year ageing, birthday cake & presents, milestones, 4 stats (Happiness, Health, Smarts, Fitness) |
+| 🎂 Growing up | Year-by-year ageing through **8 life stages** — Baby (0–2), Toddler (3–5), Child (6–12), Teenager (13–17), Young Adult (18–29), Adult (30–49), Older Adult (50–69) and Grandparent (70+) — with a welcome screen for each new stage, a life-journey strip, birthday cake & presents, milestones and 4 stats (Happiness, Health, Smarts, Fitness) |
+| 🎯 Challenges | 3 challenges every year, chosen from 70 stage-specific challenges (e.g. baby play & staying happy and healthy; homework, spelling tests & making friends; school projects, presentations, exams & graduating; finding a job, learning skills & managing money; running a household, looking after children & paying bills; hobbies, retirement & family time; storytelling with grandchildren). Finishing all three unlocks the next birthday. Rewards: coins, ⭐ challenge stars, a bonus star for a full set, and 4 new stickers. "Big moment" milestones at 16–17 (exams, graduation). Challenges that become impossible are swapped automatically, and energy can always be recharged, so nobody gets stuck |
+| 🎮 Mini-games | Quizzes (shapes, colours & animal sounds, counting, maths homework, spelling, presentations, exams, budgeting, household bills, crosswords) and find-it games (toys, tidying up, recycling, healthy food shopping, lost glasses). Every question can be read aloud |
 | 🏫 School | Nursery, primary and secondary school, school reports, 8 after-school clubs, part-time jobs for teens, then college, university or a gap year |
 | 💼 Careers | 21 jobs from shop assistant to astronaut with education and stat requirements, promotions, job titles and retirement with a pension |
 | 🪙 Money | Pocket money, chores, gifts, salaries, rent, bills, home loans paid yearly, a year-end coin summary |
@@ -62,6 +65,7 @@ Plain HTML, CSS and JavaScript — no build step, no dependencies (the Google Fo
 | `js/data.js` | All game content: towns, jobs, homes, cars, pets, shop items, activities, events, stickers |
 | `js/wardrobe.js` | Identities, pronouns, the six age-group clothing collections, colours and accessories |
 | `js/game.js` | Game engine (pure logic, no DOM). Every action goes through `BAL.Game.run(life, action, …)` |
+| `js/challenges.js` | Life-stage challenges: catalogue, yearly selection, progress tracking, rewards, the birthday lock and the mini-game question generators |
 | `js/avatar.js` | SVG avatars for every life stage: full-body (clothes, trousers, skirts, dresses, shoes) and head-and-shoulders portraits |
 | `js/storage.js` | Player profiles and their characters in `localStorage` (older saves are upgraded automatically), plus the tiny sound synthesiser |
 | `js/ui.js` | Screens, panels, pop-ups, toasts and confetti |

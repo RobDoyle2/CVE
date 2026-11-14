@@ -22,12 +22,10 @@
 
   /* ---------- lookups ---------- */
   G.stage = function (age) {
-    if (age <= 2) return 'baby';
-    if (age <= 12) return 'child';
-    if (age <= 17) return 'teen';
-    if (age <= 64) return 'adult';
-    return 'elder';
+    for (var i = 0; i < BAL.LIFE_STAGES.length; i++) if (age <= BAL.LIFE_STAGES[i].max) return BAL.LIFE_STAGES[i].id;
+    return 'grand';
   };
+  G.stageInfo = function (age) { return BAL.STAGES[G.stage(age)]; };
   G.town = function (life) { return byId(BAL.TOWNS, life.townId) || BAL.TOWNS[0]; };
   G.person = function (life, pid) { return byId(life.people, pid); };
   G.job = function (life) { return life.job ? byId(BAL.JOBS, life.job.id) : null; };
@@ -124,6 +122,7 @@
     });
   }
   G.applyFx = applyFx;
+  G._addCoins = function (life, n) { addCoins(life, n); };
 
   function addCoins(life, n) {
     n = Math.round(n);
@@ -243,8 +242,7 @@
   };
 
   function resetYear(life) {
-    var st = G.stage(life.age);
-    var max = BAL.STAGES[st].energy;
+    var max = G.stageInfo(life.age).energy;
     if (life.partTime) max -= 1;
     if (life.job) max -= 1;
     life.maxEnergy = Math.max(3, max);
@@ -252,11 +250,13 @@
     life.chores = makeChores(life);
     life.flags.askedPet = false;
     life.flags.babyYear = false;
+    life.flags.swapped = false;
+    if (G.makeGoals) G.makeGoals(life);
   }
+  G.resetYear = resetYear;
 
   function makeChores(life) {
-    var st = G.stage(life.age);
-    var pool = BAL.CHORES[st].slice();
+    var pool = BAL.CHORES[G.stageInfo(life.age).chores].slice();
     var out = [];
     while (out.length < 3 && pool.length) out.push(pool.splice(Math.floor(r() * pool.length), 1)[0]);
     if (life.pets.length) out.push(pick(BAL.CHORES.pet));
@@ -272,6 +272,7 @@
     if (typeof G.actions[name] !== 'function') return no('Unknown action');
     life._diffs = []; life._coins = 0;
     var res = G.actions[name].apply(null, [life].concat(args)) || ok('');
+    if (res.ok && G.trackGoals) res.goalsDone = G.trackGoals(life, name, args);
     res.diffs = life._diffs; res.coinsDelta = life._coins;
     delete life._diffs; delete life._coins;
     if (res.ok) checkAchievements(life);
@@ -544,10 +545,7 @@
     if (life.age < 17) return no('You can take your driving test at 17.');
     if (life.licence) return no('You already have your licence! 🪪');
     if (!needEnergy(life)) return no(TIRED, '😴');
-    var fee = life.age < 18 ? 0 : G.price(life, 60);
-    if (life.coins < fee) return no('The test costs ' + fee + ' coins.');
     life.energy -= 1;
-    addCoins(life, -fee);
     if (r() < 0.45 + life.stats.smarts / 200) {
       life.licence = true;
       applyFx(life, { happy: 8 });
@@ -971,8 +969,9 @@
     return lines;
   };
 
-  G.ageUp = function (life) {
+  G.ageUp = function (life, opts) {
     if (life.ended) return null;
+    if (!(opts && opts.force) && G.canAgeUp && !G.canAgeUp(life)) return { blocked: true, left: G.goalsLeft(life) };
     life._diffs = []; life._coins = 0;
     var rep = { lines: [], money: [], celebrations: [], event: null, choice: null, ended: false, notes: [] };
 
@@ -1134,7 +1133,10 @@
       rep.lines.push({ e: '👕', t: 'You grew out of your old clothes! You\'re now wearing the ' + grp.name + ' collection — tap "Change Your Look" to style it.' });
       rep.newGroup = grp.id;
     }
-    if (st !== prevStage && st === 'teen') life.edu.clubs = life.edu.clubs.slice(0, 2);
+    if (st !== prevStage) {
+      rep.newStage = st;
+      addLog(life, 'Became a ' + BAL.STAGES[st].name + '!', BAL.STAGES[st].emoji);
+    }
     if (life.age === 18 && life.home.type === 'family') rep.lines.push({ e: '🏡', t: 'You can keep living with your family, or move out from the Home tab.' });
 
     // 11. Life end

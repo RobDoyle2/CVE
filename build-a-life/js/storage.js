@@ -36,6 +36,7 @@
           if (!l.pronouns) l.pronouns = l.gender === 'girl' ? 'she' : l.gender === 'boy' ? 'he' : 'they';
           if (!Array.isArray(l.unlocked)) l.unlocked = [];
           if (BAL.Game) l.look = BAL.Game.normalizeLook(l.look);
+          if (BAL.Game && BAL.Game.ensureGoals) BAL.Game.ensureGoals(l);
         });
       });
       return d;

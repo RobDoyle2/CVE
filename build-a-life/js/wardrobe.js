@@ -16,13 +16,15 @@
     { id: 'they', name: 'they / them', subj: 'They', obj: 'them', poss: 'their' }
   ];
 
+  // Clothing collections line up with the life stages (young adults & adults share one collection,
+  // and older adults & grandparents share another).
   BAL.AGE_GROUPS = [
-    { id: 'baby', name: 'Babies', emoji: '👶', min: 0, max: 1, ages: '0–1', preview: 0 },
-    { id: 'toddler', name: 'Toddlers', emoji: '🧸', min: 2, max: 4, ages: '2–4', preview: 3 },
-    { id: 'child', name: 'Children', emoji: '🧒', min: 5, max: 12, ages: '5–12', preview: 8 },
+    { id: 'baby', name: 'Babies', emoji: '👶', min: 0, max: 2, ages: '0–2', preview: 1 },
+    { id: 'toddler', name: 'Toddlers', emoji: '🧸', min: 3, max: 5, ages: '3–5', preview: 4 },
+    { id: 'child', name: 'Children', emoji: '🧒', min: 6, max: 12, ages: '6–12', preview: 9 },
     { id: 'teen', name: 'Teenagers', emoji: '🧑‍🎤', min: 13, max: 17, ages: '13–17', preview: 15 },
-    { id: 'adult', name: 'Adults', emoji: '🧑', min: 18, max: 64, ages: '18–64', preview: 30 },
-    { id: 'older', name: 'Older Adults', emoji: '🧓', min: 65, max: 999, ages: '65+', preview: 75 }
+    { id: 'adult', name: 'Adults', emoji: '🧑', min: 18, max: 49, ages: '18–49', preview: 30 },
+    { id: 'older', name: 'Older Adults', emoji: '🧓', min: 50, max: 999, ages: '50+', preview: 72 }
   ];
 
   BAL.CLOTH_COLORS = ['#FF6B6B', '#FF9F1C', '#FFD43B', '#69DB7C', '#20C997', '#4DABF7', '#3B5BA5', '#9775FA',

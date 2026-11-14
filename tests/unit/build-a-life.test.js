@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 await import('../../build-a-life/js/data.js');
 await import('../../build-a-life/js/wardrobe.js');
 await import('../../build-a-life/js/game.js');
+await import('../../build-a-life/js/challenges.js');
 await import('../../build-a-life/js/avatar.js');
 await import('../../build-a-life/js/storage.js');
 const BAL = globalThis.BAL;
@@ -14,7 +15,7 @@ function lucky() { G.rng = () => 0.01; }      // every chance succeeds
 function unlucky() { G.rng = () => 0.99; }    // every chance fails
 function grow(life, years, onYear) {
   for (let i = 0; i < years && !life.ended; i++) {
-    const rep = G.ageUp(life);
+    const rep = G.ageUp(life, { force: true });
     if (onYear) onYear(rep);
   }
 }
@@ -216,7 +217,7 @@ test('every age group has its own collection with tops, trousers, skirts, dresse
 
 test('the age group follows the character as they grow', () => {
   assert.equal(G.ageGroup(0), 'baby');
-  assert.equal(G.ageGroup(1), 'baby');
+  assert.equal(G.ageGroup(2), 'baby');
   assert.equal(G.ageGroup(3), 'toddler');
   assert.equal(G.ageGroup(9), 'child');
   assert.equal(G.ageGroup(16), 'teen');
@@ -225,7 +226,7 @@ test('the age group follows the character as they grow', () => {
   lucky();
   const l = G.newLife({ name: 'Ella' });
   let notes = 0;
-  grow(l, 5, rep => { if (rep.newGroup) notes++; });
+  grow(l, 6, rep => { if (rep.newGroup) notes++; });
   assert.equal(notes, 2, 'outgrew baby and toddler clothes');
 });
 
@@ -333,5 +334,134 @@ test('every clothing item and accessory draws for every age group', () => {
     const look = G.normalizeLook(G.randomLook());
     look.accessory = acc.id;
     assert.doesNotMatch(BAL.avatar(look, 30, 50, { full: true }), /NaN|undefined/);
+  }
+});
+
+/* ---------------- Age progression & challenges ---------------- */
+
+// Plays one year's challenges the way a child would, using only normal game actions.
+function solveYear(l) {
+  for (let guard = 0; guard < 400 && !G.canAgeUp(l); guard++) {
+    const idx = l.goals.findIndex(g => !g.done);
+    const g = l.goals[idx];
+    const c = G.challenge(g.id);
+    const t = c.track;
+    if (l.energy <= 0) { assert.ok(G.run(l, 'rest').ok, 'can always rest when challenges remain'); continue; }
+    const freeActs = G.activities(l).filter(a => !G.activityCost(l, a) || G.activityCost(l, a) <= l.coins);
+    if (t.game === 'quiz') { const q = G.makeQuiz(t.kind, l.age); assert.ok(q.length >= 3); G.run(l, 'completeGame', idx, q.length, q.length); continue; }
+    if (t.game === 'find') { const f = G.makeFind(t.kind); assert.ok(f.cells.length === 12 && f.targets.every(x => f.cells.includes(x))); G.run(l, 'completeGame', idx, f.targets.length, f.targets.length); continue; }
+    if (t.chores) { l.chores.forEach((ch, i) => { if (!ch.done) G.run(l, 'chore', i); }); continue; }
+    const acts = t.act ? (Array.isArray(t.act) ? t.act : [t.act]) : [];
+    if (acts.includes('activity')) {
+      const a = freeActs.find(x => t.ids.includes(x.id));
+      assert.ok(a, `${c.id}: an affordable activity exists at age ${l.age}`);
+      G.run(l, 'activity', a.id); continue;
+    }
+    if (acts.includes('makeFriend') && G.run(l, 'makeFriend').ok) continue;
+    if (acts.includes('spendTime')) {
+      const roles = t.roles || ['friend'];
+      const p = l.people.find(x => roles.includes(x.role));
+      assert.ok(p, `${c.id}: someone to spend time with`);
+      G.run(l, 'spendTime', p.id); continue;
+    }
+    if (acts.includes('study')) { G.run(l, 'study'); continue; }
+    if (acts.includes('joinClub')) { G.run(l, 'joinClub', BAL.CLUBS.find(x => !l.edu.clubs.includes(x.id)).id); continue; }
+    if (acts.includes('partTime')) { G.run(l, 'partTime', 'paper'); continue; }
+    if (acts.includes('workHard')) { G.run(l, 'workHard'); continue; }
+    if (acts.includes('playPet')) { G.run(l, 'playPet', l.pets[0].id); continue; }
+    // state challenges
+    if (['ya_job', 'ad_findwork'].includes(c.id)) { G.run(l, 'applyJob', 'shop'); continue; }
+    if (c.id === 'ya_moveout') { G.run(l, 'rentHome', 'tinyflat'); continue; }
+    if (c.id === 'ya_licence') { G.run(l, 'drivingTest'); continue; }
+    if (c.id === 'tn_graduate') { G.run(l, 'study'); continue; }
+    // happiness / health: pick the free activity that helps most
+    const best = freeActs.slice().sort((a, b) => ((b.fx.happy || 0) + (b.fx.health || 0)) - ((a.fx.happy || 0) + (a.fx.health || 0)))[0];
+    G.run(l, 'activity', best.id);
+  }
+  assert.ok(G.canAgeUp(l), `stuck at age ${l.age}: ${JSON.stringify(l.goals)}`);
+}
+
+test('there are eight life stages', () => {
+  assert.deepEqual(BAL.LIFE_STAGES.map(s => [s.id, s.min]), [['baby', 0], ['toddler', 3], ['child', 6], ['teen', 13], ['young', 18], ['adult', 30], ['older', 50], ['grand', 70]]);
+  const ages = { 0: 'baby', 2: 'baby', 3: 'toddler', 5: 'toddler', 6: 'child', 12: 'child', 13: 'teen', 17: 'teen', 18: 'young', 29: 'young', 30: 'adult', 49: 'adult', 50: 'older', 69: 'older', 70: 'grand', 99: 'grand' };
+  for (const [age, st] of Object.entries(ages)) assert.equal(G.stage(+age), st, 'age ' + age);
+  for (const st of BAL.LIFE_STAGES) assert.ok(BAL.CHALLENGES.filter(c => c.stage === st.id).length >= 7, st.id + ' has plenty of challenges');
+});
+
+test('every year has 3 challenges and the birthday is locked until they are done', () => {
+  lucky();
+  const l = G.newLife({ name: 'Pip' });
+  assert.equal(l.goals.length, 3);
+  assert.ok(l.goals.every(g => G.challenge(g.id).stage === 'baby'));
+  const rep = G.ageUp(l);
+  assert.equal(rep.blocked, true);
+  assert.equal(l.age, 0, 'no birthday yet');
+  const coins = l.coins;
+  solveYear(l);
+  assert.ok(l.coins > coins, 'challenges give coins');
+  assert.ok(l.totals.stars >= 4, 'and stars');
+  assert.equal(G.ageUp(l).blocked, undefined);
+  assert.equal(l.age, 1);
+});
+
+test('teens must pass exams and get ready to graduate at 17', () => {
+  lucky();
+  const l = G.newLife({ name: 'Tess', age: 16 });
+  G.makeGoals(l);
+  assert.ok(l.goals.some(g => g.id === 'tn_exam'));
+  G.ageUp(l, { force: true });
+  assert.equal(l.age, 17);
+  assert.deepEqual(l.goals.slice(0, 2).map(g => g.id).sort(), ['tn_exam', 'tn_graduate']);
+  const idx = l.goals.findIndex(g => g.id === 'tn_exam');
+  assert.equal(G.run(l, 'completeGame', idx, 2, 4).ok, false, 'need 3 of 4 to pass');
+  assert.ok(G.run(l, 'completeGame', idx, 3, 4).ok);
+  assert.equal(G.run(l, 'swapGoal', l.goals.findIndex(g => g.id === 'tn_graduate')).ok, false, 'milestones cannot be swapped');
+});
+
+test('a challenge that becomes impossible is swapped for a new one', () => {
+  lucky();
+  const l = G.newLife({ name: 'Uma', age: 18 });
+  l.goals = [{ id: 'ya_job', p: 0, n: 1, done: false }, { id: 'ya_skill', p: 0, n: 2, done: false }, { id: 'ya_money', p: 0, n: 1, done: false }];
+  assert.ok(G.run(l, 'enrol', 'uni').ok);
+  assert.ok(!l.goals.some(g => g.id === 'ya_job'), 'cannot look for a job while at university');
+  assert.equal(l.goals.length, 3);
+});
+
+test('quizzes are kind and correct', () => {
+  for (const kind of ['shapes', 'colours', 'counting', 'maths', 'spelling', 'facts', 'exam', 'money', 'bills', 'words']) {
+    for (const age of [1, 4, 8, 11, 15, 25, 60]) {
+      G.rng = Math.random;
+      const q = G.makeQuiz(kind, age);
+      assert.ok(q.length >= 3, kind);
+      for (const x of q) {
+        assert.ok(x.options.includes(x.answer), kind + ' answer is an option');
+        assert.equal(new Set(x.options).size, x.options.length, kind + ' options are different: ' + x.options);
+        assert.ok(x.options.length === 3, kind + ' has 3 options');
+      }
+    }
+  }
+  const m = G.makeQuiz('maths', 7)[0];
+  assert.match(m.q, /What is \d+ [+−] \d+\?/);
+});
+
+test('whole lives can be played through every stage by completing challenges', () => {
+  G.rng = Math.random;
+  for (let n = 0; n < 4; n++) {
+    const l = G.newLife({ name: 'Life' + n, townId: G.pick(BAL.TOWNS).id });
+    const seen = new Set();
+    while (!l.ended) {
+      seen.add(G.stage(l.age));
+      solveYear(l);
+      if (l.age === 25 && !l.pets.length) { l.coins += 500; G.run(l, 'adoptPet', 'cat', 'Tom'); }
+      if (l.age === 28) { l.coins += 5000; G.run(l, 'findLove', 'any'); const p = G.partner(l); if (p) G.run(l, 'haveBaby', 'Bo'); }
+      const rep = G.ageUp(l);
+      assert.ok(!rep.blocked);
+      if (rep.choice === 'future') G.run(l, 'chooseFuture', G.pick(['uni', 'college', 'work', 'gap']));
+      if (rep.event) G.run(l, 'resolveEvent', rep.event, 0);
+    }
+    assert.ok(l.age >= 80);
+    assert.deepEqual([...seen].sort(), BAL.LIFE_STAGES.map(s => s.id).sort(), 'visited every stage');
+    assert.ok(l.totals.challenges >= l.age * 3 - 3);
+    assert.ok(l.achievements.includes('champion'));
   }
 });

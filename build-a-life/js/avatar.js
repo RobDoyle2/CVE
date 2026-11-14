@@ -27,7 +27,8 @@
 
   /* ===================== Head (shared) ===================== */
   function hairColour(look, group, age) {
-    if (group === 'older') return age > 75 ? '#ECECEC' : '#C9C9C9';
+    if (age >= 75) return '#ECECEC';
+    if (age >= 58) return '#C9C9C9';
     return look.hairColor || '#5A3825';
   }
 
