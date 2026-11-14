@@ -48,7 +48,7 @@ jobs:
       - name: Assemble site
         run: |
           mkdir -p _site
-          cp -r index.html .nojekyll css js assets data _site/
+          cp -r index.html .nojekyll css js assets data build-a-life _site/
 
       - name: Fetch NVD feed
         env:
