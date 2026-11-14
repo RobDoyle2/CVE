@@ -3,8 +3,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 await import('../../build-a-life/js/data.js');
+await import('../../build-a-life/js/wardrobe.js');
 await import('../../build-a-life/js/game.js');
 await import('../../build-a-life/js/avatar.js');
+await import('../../build-a-life/js/storage.js');
 const BAL = globalThis.BAL;
 const G = BAL.Game;
 
@@ -188,5 +190,148 @@ test('the save survives JSON round-trips and avatars render for every stage', ()
     const svg = BAL.avatar(l.look, age, 70, { bg: '#fff' });
     assert.match(svg, /^<svg[\s\S]*<\/svg>$/);
     assert.doesNotMatch(svg, /NaN|undefined/);
+  }
+});
+
+/* ---------------- Character creation & wardrobe ---------------- */
+
+test('every age group has its own collection with tops, trousers, skirts, dresses, shoes and extras', () => {
+  assert.deepEqual(BAL.AGE_GROUPS.map(g => g.id), ['baby', 'toddler', 'child', 'teen', 'adult', 'older']);
+  for (const g of BAL.AGE_GROUPS) {
+    const bottoms = G.wardrobe('bottom', g.id);
+    assert.ok(G.wardrobe('top', g.id).length >= 2, g.id + ' tops');
+    assert.ok(bottoms.some(b => b.kind === 'trousers'), g.id + ' trousers');
+    assert.ok(bottoms.some(b => b.kind === 'skirt'), g.id + ' skirts');
+    assert.ok(bottoms.some(b => b.kind === 'dress'), g.id + ' dresses');
+    assert.ok(G.wardrobe('shoes', g.id).filter(x => !x.special).length >= 2, g.id + ' shoes');
+    assert.ok(G.wardrobe('extra', g.id).length >= 2, g.id + ' extras');
+    const d = G.defaultOutfit(g.id, '#FF6B6B');
+    for (const slot of G.SLOTS) assert.ok(G.fits(slot, d[slot], g.id), `default ${slot} fits ${g.id}`);
+  }
+  for (const slot of G.SLOTS) {
+    const ids = BAL.WARDROBE[slot].map(x => x.id);
+    assert.equal(new Set(ids).size, ids.length, 'unique ids in ' + slot);
+  }
+});
+
+test('the age group follows the character as they grow', () => {
+  assert.equal(G.ageGroup(0), 'baby');
+  assert.equal(G.ageGroup(1), 'baby');
+  assert.equal(G.ageGroup(3), 'toddler');
+  assert.equal(G.ageGroup(9), 'child');
+  assert.equal(G.ageGroup(16), 'teen');
+  assert.equal(G.ageGroup(40), 'adult');
+  assert.equal(G.ageGroup(90), 'older');
+  lucky();
+  const l = G.newLife({ name: 'Ella' });
+  let notes = 0;
+  grow(l, 5, rep => { if (rep.newGroup) notes++; });
+  assert.equal(notes, 2, 'outgrew baby and toddler clothes');
+});
+
+test('identity and pronouns are saved, and any clothes can be worn', () => {
+  lucky();
+  const l = G.newLife({ name: 'Rowan', gender: 'nonbinary' });
+  assert.equal(l.pronouns, 'they');
+  assert.equal(G.pronoun(l), 'They');
+  const look = JSON.parse(JSON.stringify(l.look));
+  look.outfits.adult = Object.assign(look.outfits.adult, { top: 'blazer', bottom: 'party', shoes: 'boots' });
+  assert.ok(G.run(l, 'setLook', look, 'Ro', 'girl', 'she').ok);
+  assert.equal(l.name, 'Ro');
+  assert.equal(l.gender, 'girl');
+  assert.equal(l.pronouns, 'she');
+  assert.equal(l.look.outfits.adult.bottom, 'party');
+});
+
+test('Change Your Look is free; special items must be bought in the shop first', () => {
+  lucky();
+  const l = G.newLife({ name: 'Max', age: 10 });
+  l.coins = 1000;
+  const look = JSON.parse(JSON.stringify(l.look));
+  look.hair = 'afro'; look.skin = BAL.LOOKS.skins[4]; look.eyes = BAL.LOOKS.eyes[2]; look.hairColor = '#9B5DE5';
+  look.accessory = 'sunhat';
+  look.outfits.child = { top: 'hoodie', bottom: 'tutu', shoes: 'wellies', extra: 'scarf', topColor: '#69DB7C', bottomColor: '#F783AC', shoesColor: '#FFD43B', extraColor: '#FF6B6B' };
+  const r = G.run(l, 'setLook', look);
+  assert.ok(r.ok);
+  assert.equal(r.coinsDelta, 0, 'free');
+  assert.equal(l.coins, 1000);
+  assert.equal(l.look.outfits.child.bottom, 'tutu');
+
+  const cape = JSON.parse(JSON.stringify(l.look));
+  cape.outfits.child.extra = 'cape';
+  assert.equal(G.run(l, 'setLook', cape).ok, false, 'cape is locked');
+  const crown = JSON.parse(JSON.stringify(l.look));
+  crown.accessory = 'crown';
+  assert.equal(G.run(l, 'setLook', crown).ok, false, 'crown is locked');
+
+  assert.ok(G.run(l, 'buyItem', 'capeitem').ok);
+  assert.equal(l.look.outfits.child.extra, 'cape', 'bought cape is worn straight away');
+  assert.ok(G.run(l, 'setLook', cape).ok);
+});
+
+test('outfits that do not fit an age group fall back to that group\'s free defaults', () => {
+  const look = { skin: '#FFE0C7', hair: 'bun', fav: '#FF6B6B', outfits: { baby: { top: 'blazer', bottom: 'jeans', shoes: 'heels', extra: 'stick' } } };
+  const o = G.outfitFor(look, 'baby');
+  assert.deepEqual([o.top, o.bottom, o.shoes, o.extra], ['bodysuit', 'babygrow', 'booties', 'none']);
+});
+
+test('old saves are upgraded: one life per player becomes a list of characters', () => {
+  lucky();
+  const old = G.newLife({ name: 'Old' });
+  old.look = { skin: '#F6C9A0', hair: 'short', hairColor: '#5A3825', eyes: '#3B2314', outfit: '#FF6B6B', accessory: 'cap' };
+  old.gender = 'any'; delete old.pronouns;
+  const data = BAL.Store.migrate({ profiles: [{ id: 'p1', name: 'Kid', emoji: '🦄', color: '#000', life: old, hall: [] }], activeId: 'p1', sound: true });
+  const p = data.profiles[0];
+  assert.equal(p.life, undefined);
+  assert.equal(p.chars.length, 1);
+  assert.equal(p.activeCharId, old.id);
+  const l = p.chars[0];
+  assert.equal(l.gender, 'me');
+  assert.equal(l.pronouns, 'they');
+  assert.equal(l.look.fav, '#FF6B6B');
+  assert.equal(l.look.outfits.child.topColor, '#FF6B6B');
+  assert.equal(l.look.accessory, 'cap');
+});
+
+test('each player can keep several characters, each with their own saved life', () => {
+  lucky();
+  BAL.Store.data = { profiles: [], activeId: null, sound: false };
+  const p = BAL.Store.addProfile('Sam', '🐸', '#69DB7C');
+  BAL.Store.data.activeId = p.id;
+  const a = BAL.Store.addChar(G.newLife({ name: 'Alpha' }));
+  const b = BAL.Store.addChar(G.newLife({ name: 'Beta', age: 30 }));
+  assert.equal(p.chars.length, 2);
+  assert.equal(BAL.Store.activeChar().name, 'Beta');
+  grow(b, 5);
+  p.activeCharId = a.id;
+  assert.equal(BAL.Store.activeChar().age, 0, 'Alpha\'s life is separate');
+  assert.equal(b.age, 35);
+  BAL.Store.removeChar(a.id);
+  assert.equal(p.chars.length, 1);
+  assert.equal(BAL.Store.activeChar(), null);
+  const kid = G.makePerson('child', 4, 'girl', { name: 'Kiddo' });
+  b.people.push(kid);
+  BAL.Store.replaceChar(b.id, G.continueAsChild(b, kid.id));
+  assert.equal(p.chars.length, 1);
+  assert.equal(BAL.Store.activeChar().name, 'Kiddo');
+});
+
+test('every clothing item and accessory draws for every age group', () => {
+  for (const g of BAL.AGE_GROUPS) {
+    for (const slot of G.SLOTS) {
+      for (const it of G.wardrobe(slot, g.id)) {
+        const look = G.normalizeLook(G.randomLook());
+        look.outfits[g.id][slot] = it.id;
+        for (const full of [true, false]) {
+          const svg = BAL.avatar(look, g.preview, 80, { full });
+          assert.doesNotMatch(svg, /NaN|undefined|null/, `${g.id} ${slot} ${it.id}`);
+        }
+      }
+    }
+  }
+  for (const acc of BAL.LOOKS.accessories) {
+    const look = G.normalizeLook(G.randomLook());
+    look.accessory = acc.id;
+    assert.doesNotMatch(BAL.avatar(look, 30, 50, { full: true }), /NaN|undefined/);
   }
 });

@@ -4,14 +4,14 @@
   'use strict';
   var G = BAL.Game, Store = BAL.Store, fmt = G.fmt, byId = G.byId;
   var UI = BAL.UI = {};
-  var S = { screen: 'profiles', tab: 'activities', shopCat: 'toys', creator: null, previewAge: 6, queue: [], modal: null };
+  var S = { screen: 'profiles', tab: 'activities', shopCat: 'toys', ed: null, queue: [], modal: null };
   var $app, $modal, $toasts, $fx;
 
   var PROFILE_EMOJIS = ['🦄', '🐯', '🐸', '🐼', '🦊', '🐙', '🐵', '🐨', '🦁', '🐧', '🐲', '🦖', '🐬', '🦋', '🐝', '🌟'];
   var PROFILE_COLORS = ['#FF6B6B', '#FF9F1C', '#FFD43B', '#69DB7C', '#4DABF7', '#9775FA', '#F783AC', '#20C997'];
 
   function esc(s) { return String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
-  function life() { var p = Store.active(); return p ? p.life : null; }
+  function life() { var p = Store.active(); return p ? Store.activeChar(p) : null; }
   function save() { Store.save(); }
   function statInfo(id) { return byId(BAL.STATS, id); }
   function reduced() { return globalThis.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches; }
@@ -174,45 +174,55 @@
 
   /* ====================== Screens ====================== */
   function render() {
-    var p = Store.active();
-    if (S.screen === 'game' && (!p || !p.life)) S.screen = p ? 'create' : 'profiles';
-    var html = '';
-    if (S.screen === 'profiles') html = renderProfiles();
-    else if (S.screen === 'create') html = renderCreator();
-    else if (S.screen === 'end') html = renderEnd();
-    else html = renderGame();
+    var p = Store.active(), l = life();
+    if ((S.screen === 'game' || S.screen === 'end') && !l) S.screen = p ? 'chars' : 'profiles';
+    if (S.screen === 'chars' && !p) S.screen = 'profiles';
+    if ((S.screen === 'create' || S.screen === 'look') && !S.ed) S.screen = l ? 'game' : (p ? 'chars' : 'profiles');
+    if (S.screen === 'look' && !l) S.screen = 'chars';
+    var html;
+    switch (S.screen) {
+      case 'profiles': html = renderProfiles(); break;
+      case 'chars': html = renderChars(); break;
+      case 'create': case 'look': html = renderEditor(); break;
+      case 'end': html = renderEnd(); break;
+      default: html = renderGame();
+    }
     $app.innerHTML = html;
     $app.setAttribute('data-screen', S.screen);
-    var l = life();
-    var t = l && S.screen !== 'profiles' ? G.town(l) : null;
+    var t = null;
+    if (S.screen === 'create' && S.ed) t = byId(BAL.TOWNS, S.ed.townId);
+    else if (l && ['game', 'end', 'look'].indexOf(S.screen) >= 0) t = G.town(l);
     document.documentElement.style.setProperty('--town1', t ? t.colors[0] : '#FFD6E8');
     document.documentElement.style.setProperty('--town2', t ? t.colors[1] : '#C9F2FF');
   }
 
   function topbar() {
     var p = Store.active();
+    var inLife = ['game', 'end', 'look', 'create'].indexOf(S.screen) >= 0;
     return '<header class="topbar">' +
       '<button class="logo" data-act="goProfiles" aria-label="Build a Life — players"><span class="logo-house">🏡</span><span class="logo-text">Build <i>a</i> Life</span></button>' +
       '<div class="topbar-right">' +
-      (p ? '<span class="player-chip" style="--pc:' + esc(p.color) + '"><span>' + esc(p.emoji) + '</span>' + esc(p.name) + '</span>' : '') +
+      (p && S.screen !== 'profiles' ? '<button class="player-chip" data-act="goChars" style="--pc:' + esc(p.color) + '" title="My characters"><span>' + esc(p.emoji) + '</span>' + esc(p.name) + '</button>' : '') +
       '<button class="icon-btn" data-act="sound" aria-label="Sound on or off" title="Sound">' + (Store.data.sound ? '🔊' : '🔇') + '</button>' +
       '<button class="icon-btn" data-act="help" aria-label="How to play" title="How to play">❓</button>' +
+      (p && inLife ? '<button class="icon-btn" data-act="goChars" aria-label="My characters" title="My characters">🧑‍🤝‍🧑</button>' : '') +
       (S.screen !== 'profiles' ? '<button class="icon-btn" data-act="goProfiles" aria-label="Switch player" title="Switch player">👥</button>' : '') +
       '</div></header>';
   }
 
-  /* ---------- Profiles ---------- */
+  /* ---------- Player profiles ---------- */
   function renderProfiles() {
     var ps = Store.data.profiles;
     var cards = ps.map(function (p) {
-      var l = p.life, sub;
-      if (!l) sub = 'Ready to start a life!';
-      else if (l.ended) sub = '🌟 ' + esc(l.name) + '\'s story is complete';
-      else sub = esc(l.name) + ' · age ' + l.age + ' · ' + G.town(l).emoji + ' ' + esc(G.town(l).name);
+      var live = p.chars.filter(function (c) { return !c.ended; });
+      var sub = p.chars.length ? p.chars.length + ' character' + (p.chars.length === 1 ? '' : 's') + (live.length < p.chars.length ? ' · ' + (p.chars.length - live.length) + ' complete' : '') : 'Ready to make a character!';
+      var faces = p.chars.slice(-3).map(function (c) { return '<span class="mini-face">' + BAL.avatar(c.look, c.age, c.stats.happy, { bg: '#fff' }) + '</span>'; }).join('');
       return '<div class="profile-card pop" style="--pc:' + esc(p.color) + '">' +
         '<button class="profile-main" data-act="pickProfile"' + a('id', p.id) + '>' +
-        '<span class="profile-emoji">' + (l && !l.ended ? BAL.avatar(l.look, l.age, l.stats.happy) : esc(p.emoji)) + '</span>' +
-        '<span class="profile-name">' + esc(p.name) + '</span><span class="profile-sub">' + sub + '</span>' +
+        '<span class="profile-emoji">' + esc(p.emoji) + '</span>' +
+        '<span class="profile-name">' + esc(p.name) + '</span>' +
+        (faces ? '<span class="faces">' + faces + '</span>' : '') +
+        '<span class="profile-sub">' + sub + '</span>' +
         (p.hall.length ? '<span class="profile-hall">🏆 ' + p.hall.length + ' ' + (p.hall.length === 1 ? 'life' : 'lives') + ' lived</span>' : '') +
         '<span class="btn primary small">▶ Play</span></button>' +
         '<button class="profile-del" data-act="delProfile"' + a('id', p.id) + ' aria-label="Delete player ' + esc(p.name) + '" title="Delete player">🗑️</button></div>';
@@ -222,19 +232,20 @@
       '<h1>Build <span>a</span> Life</h1><p class="tagline">Grow up, make friends, find a job, adopt pets and build the life of your dreams!</p></div>' +
       '<h2 class="section-title">' + (ps.length ? '👋 Who\'s playing?' : '👋 Welcome! Make your player to begin') + '</h2>' +
       '<div class="profile-grid">' + cards +
-      '<button class="profile-card add pop" data-act="newProfile"><span class="profile-emoji">➕</span><span class="profile-name">New Player</span><span class="profile-sub">Everyone gets their own save!</span></button></div>' +
+      '<button class="profile-card add pop" data-act="newProfile"><span class="profile-emoji">➕</span><span class="profile-name">New Player</span><span class="profile-sub">Everyone gets their own characters and saves!</span></button></div>' +
       '<p class="parent-note">👪 <b>For grown-ups:</b> all coins in this game are pretend. There are no real-money purchases, no adverts and no chat. Games are saved only on this device.</p>' +
       '</main>';
   }
   function heroArt() {
+    var C = BAL.CLOTH_COLORS;
     var looks = [
-      { skin: '#F6C9A0', hair: 'pigtails', hairColor: '#E9C46A', eyes: '#1F6FEB', outfit: '#FF6B6B', accessory: 'bow' },
-      { skin: '#8D5A36', hair: 'afro', hairColor: '#2B1B12', eyes: '#3B2314', outfit: '#4DABF7', accessory: 'none' },
-      { skin: '#E0A877', hair: 'bun', hairColor: '#5A3825', eyes: '#2A9D8F', outfit: '#69DB7C', accessory: 'glasses' },
-      { skin: '#FFE0C7', hair: 'short', hairColor: '#A0522D', eyes: '#3B2314', outfit: '#9775FA', accessory: 'cap' }
+      { skin: '#F6C9A0', hair: 'pigtails', hairColor: '#E9C46A', eyes: '#1F6FEB', fav: '#FF6B6B', accessory: 'bow', outfits: { baby: { top: 'bodysuit', bottom: 'romper', shoes: 'booties', extra: 'none', topColor: C[8], bottomColor: C[8], shoesColor: '#fff' } } },
+      { skin: '#8D5A36', hair: 'afro', hairColor: '#2B1B12', eyes: '#3B2314', fav: '#4DABF7', accessory: 'none', outfits: { child: { top: 'dino', bottom: 'shorts', shoes: 'lightup', extra: 'backpack', topColor: '#69DB7C', bottomColor: '#3B5BA5', shoesColor: '#FF6B6B', extraColor: '#FF9F1C' } } },
+      { skin: '#E0A877', hair: 'long', hairColor: '#5A3825', eyes: '#2A9D8F', fav: '#9775FA', accessory: 'sunglasses', outfits: { adult: { top: 'denim', bottom: 'skirt', shoes: 'boots', extra: 'bag', topColor: '#4DABF7', bottomColor: '#F783AC', shoesColor: '#8D6E63', extraColor: '#9775FA' } } },
+      { skin: '#FFE0C7', hair: 'short', hairColor: '#A0522D', eyes: '#3B2314', fav: '#9775FA', accessory: 'flatcap', outfits: { older: { top: 'knit', bottom: 'slacks', shoes: 'comfy', extra: 'stick', topColor: '#FF9F1C', bottomColor: '#8D6E63', shoesColor: '#8D6E63' } } }
     ];
     var ages = [0, 8, 30, 75];
-    return ages.map(function (ag, i) { return '<div class="hero-av" style="--d:' + (i * 0.25) + 's">' + BAL.avatar(looks[i], ag, 90) + '</div>'; }).join('<span class="hero-arrow">➜</span>');
+    return ages.map(function (ag, i) { return '<div class="hero-av" style="--d:' + (i * 0.25) + 's">' + BAL.avatar(looks[i], ag, 90, { full: true }) + '</div>'; }).join('<span class="hero-arrow">➜</span>');
   }
 
   function newProfileModal() {
@@ -253,53 +264,226 @@
       } }, { label: 'Cancel', cls: 'ghost' }] });
   }
 
-  /* ---------- Character creator ---------- */
+  /* ---------- Characters (each with their own saved life) ---------- */
+  var MAX_CHARS = 12;
+  function charStatus(l) {
+    if (l.ended) return '🌟 Life story complete';
+    if (l.job) return G.job(l).emoji + ' ' + G.jobTitle(l);
+    if (l.edu.course) return '🎓 Student';
+    if (l.retired) return '🏖️ Retired';
+    var sch = G.school(l);
+    return sch ? sch.emoji + ' ' + sch.label.split(' —')[0] : BAL.STAGES[G.stage(l.age)].emoji + ' ' + BAL.STAGES[G.stage(l.age)].name;
+  }
+  function renderChars() {
+    var p = Store.active();
+    var cards = p.chars.map(function (l) {
+      var t = G.town(l);
+      var current = l.id === p.activeCharId;
+      return '<div class="cs-card pop' + (l.ended ? ' ended' : '') + (current ? ' current' : '') + '" style="--t1:' + t.colors[0] + ';--t2:' + t.colors[1] + '">' +
+        '<button class="cs-main" data-act="pickChar"' + a('id', l.id) + '>' +
+        '<span class="cs-av">' + BAL.avatar(l.look, l.age, l.ended ? 90 : l.stats.happy, { full: true }) + '</span>' +
+        '<span class="cs-name">' + esc(l.name) + (l.generation > 1 ? ' <small>Gen ' + l.generation + '</small>' : '') + '</span>' +
+        '<span class="cs-line">' + (l.ended ? 'Lived to ' + l.age : 'Age ' + l.age) + ' · ' + t.emoji + ' ' + esc(t.name) + '</span>' +
+        '<span class="cs-line">' + esc(charStatus(l)) + '</span>' +
+        '<span class="cs-line small">🪙 ' + fmt(l.coins) + ' · 🌟 ' + l.achievements.length + ' stickers</span>' +
+        '<span class="btn ' + (l.ended ? '' : 'primary ') + 'small">' + (l.ended ? '📖 See story' : '▶ Play') + '</span></button>' +
+        '<button class="profile-del" data-act="delChar"' + a('id', l.id) + ' aria-label="Delete ' + esc(l.name) + '" title="Delete character">🗑️</button></div>';
+    }).join('');
+    var hall = p.hall.length ? '<h2 class="section-title">🏆 Hall of Fame</h2><div class="hall">' + p.hall.slice().reverse().map(hallCard).join('') + '</div>' : '';
+    return topbar() + '<main class="chars-screen">' +
+      '<div class="chars-head"><span class="player-big" style="--pc:' + esc(p.color) + '">' + esc(p.emoji) + '</span><div><h1>' + esc(p.name) + '\'s Characters</h1>' +
+      '<p>Every character has their very own life saved. Pick one to play, or make someone new! (' + p.chars.length + ' / ' + MAX_CHARS + ')</p></div></div>' +
+      '<div class="cs-grid">' + cards +
+      (p.chars.length < MAX_CHARS ? '<button class="cs-card add pop" data-act="newChar"><span class="cs-plus">➕</span><span class="cs-name">New Character</span><span class="cs-line">Start a brand new life as a baby</span></button>' : '') +
+      '</div>' + hall + '</main>';
+  }
+
+  /* ---------- Character editor: "Create your character" and "Change Your Look" ---------- */
+  var STEPS = [
+    { id: 'me', name: 'Me', emoji: '📛' },
+    { id: 'face', name: 'Face & Hair', emoji: '💇' },
+    { id: 'clothes', name: 'Clothes', emoji: '👕' },
+    { id: 'extras', name: 'Accessories', emoji: '🎀' },
+    { id: 'home', name: 'Family & Home', emoji: '🏡', newOnly: true }
+  ];
+  var LOOK_KEYS = ['skin', 'eyes', 'hair', 'hairColor', 'accessory', 'fav'];
+  var OUTFIT_KEYS = ['top', 'bottom', 'shoes', 'extra', 'topColor', 'bottomColor', 'shoesColor', 'extraColor'];
+  var ED_KEYS = ['gender', 'pronouns', 'townId', 'familyType'];
+
   function startCreator(prefill) {
     var g = G.pick(['girl', 'boy']);
-    S.creator = Object.assign({ name: G.randomName(g), gender: g, look: G.randomLook(), townId: 'maple', familyType: 'mumdad' }, prefill || {});
-    S.creator.look.accessory = S.creator.look.accessory === 'crown' ? 'none' : S.creator.look.accessory;
-    S.previewAge = 6;
+    var look = G.randomLook();
+    delete look.outfits;                       // start from the free default collection in the favourite colour
+    if (look.accessory !== 'none' && G.pick([0, 1])) look.accessory = 'none';
+    S.ed = Object.assign({ mode: 'new', step: 'me', group: 'baby', name: G.randomName(g), gender: g, pronouns: g === 'girl' ? 'she' : 'he',
+      look: G.normalizeLook(look), townId: 'maple', familyType: 'mumdad' }, prefill || {});
     S.screen = 'create';
     render();
     window.scrollTo(0, 0);
   }
+  function startLookEditor(step) {
+    var l = life(); if (!l) return;
+    S.ed = { mode: 'edit', step: step || 'clothes', group: G.ageGroup(l.age), name: l.name, gender: l.gender, pronouns: l.pronouns,
+      look: G.normalizeLook(JSON.parse(JSON.stringify(l.look))) };
+    S.screen = 'look';
+    BAL.sound('click');
+    render();
+    window.scrollTo(0, 0);
+  }
+  function edLocked(slot, id) {
+    var l = S.ed.mode === 'edit' ? life() : { unlocked: [] };
+    return G.isLocked(l, slot, id);
+  }
+  function edAge() {
+    var e = S.ed, l = life();
+    if (e.mode === 'edit' && l && G.ageGroup(l.age) === e.group) return l.age;
+    return G.groupInfo(e.group).preview;
+  }
 
-  function renderCreator() {
-    var c = S.creator || (startCreator(), S.creator);
-    var L = BAL.LOOKS, look = c.look;
-    function swatches(key, list) {
-      return '<div class="pick-row">' + list.map(function (col) {
-        return '<button class="pick swatch' + (look[key] === col ? ' on' : '') + '" data-act="look"' + a('k', key) + a('v', col) + ' style="background:' + col + '" aria-label="' + key + ' ' + col + '"></button>';
-      }).join('') + '</div>';
+  function renderEditor() {
+    var e = S.ed, look = e.look, isNew = e.mode === 'new', l = life();
+    var steps = STEPS.filter(function (st) { return isNew || !st.newOnly; });
+    var idx = Math.max(0, steps.findIndex(function (x) { return x.id === e.step; }));
+    var grp = G.groupInfo(e.group);
+    var nowGroup = !isNew && l ? G.ageGroup(l.age) : null;
+    var town = byId(BAL.TOWNS, isNew ? e.townId : l.townId);
+    var ident = byId(BAL.IDENTITIES, e.gender) || BAL.IDENTITIES[3], pro = byId(BAL.PRONOUNS, e.pronouns) || BAL.PRONOUNS[2];
+    var saveLabel = isNew ? '👶 Start my life!' : '✅ Save my look';
+    var groupsRow = BAL.AGE_GROUPS.map(function (g) {
+      return '<button class="pick chip small' + (g.id === e.group ? ' on' : '') + '" data-act="edGroup"' + a('v', g.id) + '>' + g.emoji + ' ' + g.name + (g.id === nowGroup ? ' 📍' : '') + '</button>';
+    }).join('');
+    var previewNote = isNew ? 'Tap an age to see — and dress — your character as they grow up!'
+      : (e.group === nowGroup ? '📍 This is how you look now.' : 'Planning ahead! You\'ll wear this when you\'re in the ' + grp.name + ' age group.');
+    var preview = '<div class="ed-preview card" style="--t1:' + town.colors[0] + ';--t2:' + town.colors[1] + '">' +
+      '<div class="ed-stage"><div class="ed-av bob">' + BAL.avatar(look, edAge(), 92, { full: true, label: 'Your character' }) + '</div><div class="ed-floor"></div></div>' +
+      '<div class="preview-name" id="pvname">' + esc(e.name || '…') + '</div>' +
+      '<div class="ed-ident">' + ident.emoji + ' ' + esc(ident.name) + ' · ' + esc(pro.name) + '</div>' +
+      '<div class="pick-row center">' + groupsRow + '</div>' +
+      '<p class="muted small center">' + previewNote + '</p>' +
+      btn(saveLabel, 'edSave', '', 'primary huge') +
+      (isNew ? btn('🎲 Surprise me!', 'edRandomAll', '', 'ghost') : btn('Cancel', 'edCancel', '', 'ghost')) + '</div>';
+    var nav = '<nav class="steps" aria-label="Steps">' + steps.map(function (st, i) {
+      return '<button class="step' + (st.id === e.step ? ' on' : '') + (i < idx ? ' done' : '') + '" data-act="edStep"' + a('v', st.id) + '><span class="step-num">' + (i < idx ? '✓' : i + 1) + '</span><span class="step-name">' + st.emoji + ' ' + st.name + '</span></button>';
+    }).join('') + '</nav>';
+    var body = { me: edMe, face: edFace, clothes: edClothes, extras: edExtras, home: edHome }[e.step] || edMe;
+    var foot = '<div class="step-nav">' + (idx > 0 ? btn('⬅ Back', 'edStep', a('v', steps[idx - 1].id), 'big ghost') : '<span></span>') +
+      (idx < steps.length - 1 ? btn('Next ➡', 'edStep', a('v', steps[idx + 1].id), 'big primary') : btn(saveLabel, 'edSave', '', 'big pink')) + '</div>';
+    return topbar() + '<main class="creator">' + preview + '<div class="creator-options">' +
+      '<h1 class="section-title">' + (isNew ? '✨ Create your character' : '🪞 Change Your Look') + '</h1>' +
+      (isNew ? '' : '<div class="tip">💸 Changing your look is always <b>free</b> — change it as often as you like! Special items marked 🔒 can be unlocked in the Shop.</div>') +
+      nav + '<div class="ed-body pop">' + body(e) + '</div>' + foot + '</div></main>' +
+      '<div class="ed-float" aria-hidden="true">' + BAL.avatar(look, edAge(), 92, { full: true }) + '</div>';
+  }
+
+  function swatchRow(k, list, val, label) {
+    return '<div class="pick-row" role="group" aria-label="' + esc(label || k) + '">' + list.map(function (col) {
+      return '<button class="pick swatch' + (val === col ? ' on' : '') + '" data-act="edSet"' + a('k', k) + a('v', col) + ' style="background:' + col + '" aria-label="' + esc(label || k) + ' colour ' + col + '"' + (val === col ? ' aria-pressed="true"' : '') + '></button>';
+    }).join('') + '</div>';
+  }
+  function tile(k, item, val, slot, art) {
+    var locked = item.special && edLocked(slot || k, item.id);
+    var on = val === item.id;
+    return '<button class="tile' + (on ? ' on' : '') + (locked ? ' locked' : '') + '" data-act="edSet"' + a('k', k) + a('v', item.id) + (locked ? a('locked', 1) : '') + ' aria-pressed="' + on + '">' +
+      (art ? '<span class="tile-art">' + art + '</span>' : '<span class="tile-emoji">' + item.emoji + '</span>') +
+      '<span class="tile-name">' + esc(item.name) + '</span>' + (locked ? '<span class="tile-lock">🔒 Shop</span>' : (item.special ? '<span class="tile-lock got">✨ Special</span>' : '')) + '</button>';
+  }
+  function tiles(k, list, val, slot) { return '<div class="tile-grid">' + list.map(function (it) { return tile(k, it, val, slot); }).join('') + '</div>'; }
+  function edCard(title, inner, note) { return '<section class="card opt"><h3>' + title + '</h3>' + (note ? '<p class="muted small">' + note + '</p>' : '') + inner + '</section>'; }
+
+  function edMe(e) {
+    return edCard('📛 Name', '<div class="name-row"><input id="cname" maxlength="20" value="' + esc(e.name) + '" aria-label="Character name" autocomplete="off"><button class="btn" data-act="edName" aria-label="Random name">🎲</button></div>') +
+      edCard('🙂 Who is your character?', tiles('gender', BAL.IDENTITIES, e.gender), 'Pick whatever feels right. Every character can wear any clothes, hairstyle or accessory! 🌈') +
+      edCard('💬 Pronouns', '<div class="pick-row">' + BAL.PRONOUNS.map(function (p) {
+        return '<button class="pick chip' + (e.pronouns === p.id ? ' on' : '') + '" data-act="edSet"' + a('k', 'pronouns') + a('v', p.id) + ' aria-pressed="' + (e.pronouns === p.id) + '">' + esc(p.name) + '</button>';
+      }).join('') + '</div>', 'How should the game talk about your character?');
+  }
+
+  function edFace(e) {
+    var L = BAL.LOOKS, look = e.look, age = edAge();
+    var hairTiles = '<div class="tile-grid hair">' + L.hairStyles.map(function (h) {
+      var art = BAL.avatar(Object.assign({}, look, { hair: h.id, accessory: 'none' }), Math.max(age, 5), 90, { bg: '#fff' });
+      return tile('hair', h, look.hair, 'hair', art);
+    }).join('') + '</div>';
+    return edCard('🎨 Skin tone', swatchRow('skin', L.skins, look.skin, 'Skin')) +
+      edCard('👀 Eye colour', swatchRow('eyes', L.eyes, look.eyes, 'Eye')) +
+      edCard('💇 Hairstyle', hairTiles, e.group === 'baby' ? 'Babies only have a little curl — try another age to see your full hairstyle!' : '') +
+      edCard('🌈 Hair colour', swatchRow('hairColor', L.hairColors, look.hairColor, 'Hair'), 'Hair turns silver in the Older Adults years. ✨');
+  }
+
+  function edClothes(e) {
+    var grp = G.groupInfo(e.group), of = e.look.outfits[e.group], C = BAL.CLOTH_COLORS;
+    var bottoms = G.wardrobe('bottom', e.group);
+    var b = G.piece('bottom', of.bottom);
+    var covered = b.kind === 'dress' || b.kind === 'onesie';
+    function kinds(list) { return bottoms.filter(function (x) { return list.indexOf(x.kind) >= 0; }); }
+    var groups = [
+      ['👖 Trousers & Shorts', kinds(['trousers', 'shorts', 'dungarees'])],
+      ['🌼 Skirts', kinds(['skirt'])],
+      ['👗 Dresses', kinds(['dress'])],
+      ['🐣 All-in-ones', kinds(['onesie'])]
+    ].filter(function (x) { return x[1].length; });
+    var tabs = '<div class="collection-tabs">' + BAL.AGE_GROUPS.map(function (g) {
+      return '<button class="ctab' + (g.id === e.group ? ' on' : '') + '" data-act="edGroup"' + a('v', g.id) + '><span>' + g.emoji + '</span>' + g.name + '<small>' + g.ages + '</small></button>';
+    }).join('') + '</div>';
+    return '<div class="collection-banner"><span class="cb-emoji">' + grp.emoji + '</span><div><b>The ' + grp.name + ' Collection</b><small>Clothes for ages ' + grp.ages + ' — every outfit is free!</small></div>' +
+      '<div class="cb-btns">' + btn('🎲 Random outfit', 'edRandom', '', 'small') + btn('↺ Reset', 'edReset', '', 'small ghost') + '</div></div>' + tabs +
+      edCard('👕 Tops', tiles('top', G.wardrobe('top', e.group), of.top) + '<h4>Top colour</h4>' + swatchRow('topColor', C, of.topColor, 'Top'),
+        covered ? 'Your ' + b.name.toLowerCase() + ' covers your top — pick trousers, shorts or a skirt to show it off!' : '') +
+      edCard('👖 Trousers, Skirts & Dresses', groups.map(function (gp) { return '<h4>' + gp[0] + '</h4>' + tiles('bottom', gp[1], of.bottom); }).join('') +
+        '<h4>Colour</h4>' + swatchRow('bottomColor', C, of.bottomColor, 'Trousers, skirt or dress')) +
+      edCard('👟 Shoes', tiles('shoes', G.wardrobe('shoes', e.group), of.shoes, 'shoes') + '<h4>Shoe colour</h4>' + swatchRow('shoesColor', C, of.shoesColor, 'Shoe'));
+  }
+
+  function edExtras(e) {
+    var of = e.look.outfits[e.group], grp = G.groupInfo(e.group);
+    return edCard('🎩 Hats, glasses & hair accessories', tiles('accessory', BAL.LOOKS.accessories, e.look.accessory, 'accessory'), 'These stay with you at every age.') +
+      edCard('🧣 Extras for the ' + grp.name + ' Collection', tiles('extra', G.wardrobe('extra', e.group), of.extra, 'extra') + '<h4>Extra colour</h4>' + swatchRow('extraColor', BAL.CLOTH_COLORS, of.extraColor, 'Extra')) +
+      edCard('💜 Favourite colour', swatchRow('fav', BAL.CLOTH_COLORS.slice(0, 9), e.look.fav, 'Favourite'), 'Used for caps, woolly hats and headbands.');
+  }
+
+  function edHome(e) {
+    return edCard('👪 Your family', '<div class="pick-row">' + BAL.FAMILY_TYPES.map(function (f) {
+      return '<button class="pick chip' + (e.familyType === f.id ? ' on' : '') + '" data-act="edSet"' + a('k', 'familyType') + a('v', f.id) + '>' + f.emoji + ' ' + esc(f.name) + '</button>';
+    }).join('') + '</div>') +
+      edCard('📍 Where will you be born?', '<div class="town-grid">' + BAL.TOWNS.map(function (t) {
+        return '<button class="town-card' + (t.id === e.townId ? ' on' : '') + '" data-act="edSet"' + a('k', 'townId') + a('v', t.id) + ' style="--t1:' + t.colors[0] + ';--t2:' + t.colors[1] + '"><span class="town-emoji">' + t.emoji + '</span><b>' + esc(t.name) + '</b><small>' + esc(t.kind) + '</small><span class="town-desc">' + esc(t.desc) + '</span></button>';
+      }).join('') + '</div>');
+  }
+
+  function edSet(k, v, locked) {
+    var e = S.ed;
+    if (locked) {
+      BAL.sound('bad');
+      toast(e.mode === 'edit' ? 'That\'s a special item! Buy it with coins in the Shop 🛍️ to unlock it.' : 'That\'s a special item! You can unlock it in the Shop once your life begins. 🛍️', '🔒', 'bad');
+      return;
     }
-    function chips(key, list, val) {
-      return '<div class="pick-row">' + list.map(function (o) {
-        return '<button class="pick chip' + (val === o.id ? ' on' : '') + '" data-act="' + (key === 'gender' || key === 'familyType' ? 'cset' : 'look') + '"' + a('k', key) + a('v', o.id) + '>' + (o.emoji ? o.emoji + ' ' : '') + esc(o.name) + '</button>';
-      }).join('') + '</div>';
+    if (LOOK_KEYS.indexOf(k) >= 0) e.look[k] = v;
+    else if (OUTFIT_KEYS.indexOf(k) >= 0) e.look.outfits[e.group][k] = v;
+    else if (ED_KEYS.indexOf(k) >= 0) {
+      e[k] = v;
+      if (k === 'gender') { var id = byId(BAL.IDENTITIES, v); if (id && (v === 'girl' || v === 'boy' || e.pronouns !== 'they')) e.pronouns = id.pronouns; }
     }
-    var town = byId(BAL.TOWNS, c.townId);
-    var ages = [[0, '👶 Baby'], [6, '🧒 Kid'], [15, '🧑‍🎤 Teen'], [30, '🧑 Grown-up'], [78, '🧓 Old']];
-    return topbar() + '<main class="creator">' +
-      '<div class="creator-preview card" style="--t1:' + town.colors[0] + ';--t2:' + town.colors[1] + '">' +
-      '<div class="preview-av bob">' + BAL.avatar(look, S.previewAge, 90, { label: 'Your character' }) + '</div>' +
-      '<div class="preview-name" id="pvname">' + esc(c.name || '…') + '</div>' +
-      '<div class="pick-row center">' + ages.map(function (x) { return '<button class="pick chip small' + (S.previewAge === x[0] ? ' on' : '') + '" data-act="previewAge"' + a('v', x[0]) + '>' + x[1] + '</button>'; }).join('') + '</div>' +
-      '<p class="muted small center">See how you\'ll grow up!</p>' +
-      '<button class="btn primary huge" data-act="startLife">👶 Start my life!</button>' +
-      '<button class="btn ghost" data-act="randomChar">🎲 Surprise me!</button></div>' +
-      '<div class="creator-options">' +
-      '<h1 class="section-title">✨ Create your character</h1>' +
-      '<section class="card opt"><h3>📛 Name</h3><div class="name-row"><input id="cname" maxlength="20" value="' + esc(c.name) + '" aria-label="Character name" autocomplete="off"><button class="btn" data-act="randName" aria-label="Random name">🎲</button></div></section>' +
-      '<section class="card opt"><h3>🙂 I am a…</h3>' + chips('gender', [{ id: 'girl', name: 'Girl', emoji: '👧' }, { id: 'boy', name: 'Boy', emoji: '👦' }, { id: 'any', name: 'Just me!', emoji: '🌈' }], c.gender) + '</section>' +
-      '<section class="card opt"><h3>🎨 Skin</h3>' + swatches('skin', L.skins) + '</section>' +
-      '<section class="card opt"><h3>💇 Hair style</h3>' + chips('hair', L.hairStyles, look.hair) + '<h3>🌈 Hair colour</h3>' + swatches('hairColor', L.hairColors) + '</section>' +
-      '<section class="card opt"><h3>👀 Eyes</h3>' + swatches('eyes', L.eyes) + '<h3>👕 Favourite colour</h3>' + swatches('outfit', L.outfits) + '</section>' +
-      '<section class="card opt"><h3>🎀 Extras</h3>' + chips('accessory', L.accessories.filter(function (x) { return x.id !== 'crown'; }), look.accessory) + '</section>' +
-      '<section class="card opt"><h3>👪 Your family</h3>' + chips('familyType', BAL.FAMILY_TYPES, c.familyType) + '</section>' +
-      '<section class="card opt"><h3>📍 Where will you be born?</h3><div class="town-grid">' + BAL.TOWNS.map(function (t) {
-        return '<button class="town-card' + (t.id === c.townId ? ' on' : '') + '" data-act="ctown"' + a('v', t.id) + ' style="--t1:' + t.colors[0] + ';--t2:' + t.colors[1] + '"><span class="town-emoji">' + t.emoji + '</span><b>' + esc(t.name) + '</b><small>' + esc(t.kind) + '</small><span class="town-desc">' + esc(t.desc) + '</span></button>';
-      }).join('') + '</div></section>' +
-      '</div></main>';
+    BAL.sound('click');
+    render();
+  }
+
+  function edSave() {
+    var e = S.ed;
+    if (!e.name || !e.name.trim()) { e.step = 'me'; render(); var inp = document.getElementById('cname'); if (inp) { inp.classList.add('shake'); inp.focus(); } toast('Please give your character a name! 📛', '📛', 'bad'); return; }
+    if (e.mode === 'edit') {
+      S.ed = null; S.screen = 'game';
+      act('setLook', e.look, e.name, e.gender, e.pronouns);
+      return;
+    }
+    var nl = G.newLife({ name: e.name, gender: e.gender, pronouns: e.pronouns, look: e.look, townId: e.townId, familyType: e.familyType });
+    Store.addChar(nl);
+    S.ed = null; S.screen = 'game'; S.tab = 'activities';
+    render(); window.scrollTo(0, 0);
+    BAL.sound('tada'); confetti(true);
+    var fam = nl.people.filter(function (x) { return G.PARENTS.indexOf(x.role) >= 0; }).map(function (x) { return x.name; });
+    openModal({ html: '<div class="welcome-av">' + BAL.avatar(nl.look, 0, 95, { full: true }) + '</div><p class="lead">Welcome to the world, <b>' + esc(nl.name) + '</b>!</p><p>You were born in ' + G.town(nl).emoji + ' <b>' + esc(G.town(nl).name) + '</b>' + (fam.length ? ' to ' + esc(fam.join(' and ')) : '') + '.</p>' +
+      '<ul class="year-lines"><li><span>🎈</span> Do <b>activities</b> using your ⚡ energy.</li><li><span>✅</span> Finish your <b>daily jobs</b>.</li><li><span>🪞</span> Tap <b>Change Your Look</b> any time — it\'s free!</li><li><span>🎂</span> Press <b>Age Up</b> to have a birthday and grow!</li></ul>',
+      title: 'It\'s a new life! 👶', buttons: [{ label: 'Let\'s go! 🚀' }] });
   }
 
   /* ---------- Game screen ---------- */
@@ -338,11 +522,12 @@
 
     return topbar() + '<main class="game">' +
       '<aside class="char card" style="--t1:' + t.colors[0] + ';--t2:' + t.colors[1] + '">' +
-      '<div class="char-top"><div class="char-av bob">' + BAL.avatar(l.look, l.age, l.stats.happy, { label: l.name }) + (l.sick ? '<span class="sick-tag" title="Feeling poorly">' + byId(BAL.ILLNESSES, l.sick.id).emoji + '</span>' : '') + '</div>' +
+      '<div class="char-top"><div class="char-av"><div class="bob">' + BAL.avatar(l.look, l.age, l.stats.happy, { full: true, label: l.name }) + '</div>' + (l.sick ? '<span class="sick-tag" title="Feeling poorly">' + byId(BAL.ILLNESSES, l.sick.id).emoji + '</span>' : '') + '</div>' +
       '<div class="char-id"><div class="char-name">' + esc(l.name) + (l.generation > 1 ? ' <small title="Generation">Gen ' + l.generation + '</small>' : '') + '</div>' +
       '<div class="char-age"><b>' + l.age + '</b> year' + (l.age === 1 ? '' : 's') + ' old</div>' +
       '<div class="chips-row"><span class="chip-s">' + st.emoji + ' ' + st.name + '</span><span class="chip-s">' + t.emoji + ' ' + esc(t.name) + '</span></div>' +
-      (status.indexOf(st.name) < 0 ? '<div class="chips-row"><span class="chip-s">' + status + '</span></div>' : '') + '</div></div>' +
+      (status.indexOf(st.name) < 0 ? '<div class="chips-row"><span class="chip-s">' + status + '</span></div>' : '') +
+      '</div></div><button class="btn look-btn" data-act="changeLook"><span>🪞</span> Change Your Look <small>· free!</small></button>' +
       '<div class="coins-row"><span class="coins" title="Coins (pretend money)"><span class="coin-ico">🪙</span> ' + fmt(l.coins) + '</span><span class="year">📅 ' + l.year + '</span></div>' +
       '<div class="energy" title="Energy: each activity uses one ⚡. Age up to get more!"><span class="energy-label">Energy</span>' + pips + '</div>' +
       '<div class="stats">' + stats + '</div>' +
@@ -451,6 +636,7 @@
   function personCard(l, p) {
     var role = BAL.ROLES[p.role] || { label: p.role, emoji: '🙂' };
     var label = role.label;
+    if (p.role === 'parent') label = 'Parent';
     if (p.role === 'sibling') label = p.gender === 'girl' ? 'Sister' : p.gender === 'boy' ? 'Brother' : 'Sibling';
     if (p.role === 'spouse') label = p.gender === 'girl' ? 'Wife' : 'Husband';
     if (p.role === 'child') label = (p.gender === 'girl' ? 'Daughter' : 'Son') + (p.age >= 18 ? ' (grown up)' : '');
@@ -468,7 +654,7 @@
 
   function panelPeople(l) {
     var groups = [
-      ['👪 Family', ['mum', 'dad', 'grandma', 'grandpa', 'sibling']],
+      ['👪 Family', ['mum', 'dad', 'parent', 'grandma', 'grandpa', 'sibling']],
       ['💕 Love', ['partner', 'fiance', 'spouse']],
       ['🧸 Children & Grandchildren', ['child', 'grandchild']],
       ['🤝 Friends', ['friend']]
@@ -559,14 +745,13 @@
         (owned ? '<span class="tag ok">✓ Owned</span>' : btn('🪙 ' + fmt(price), 'do', a('fn', 'buyItem') + a('a1', it.id), 'small' + (l.coins >= price ? ' primary' : ' ghost'))) + '</div>';
     }).join('');
     var stuff = l.inventory.map(function (id) { var it = byId(BAL.ITEMS, id); return it ? '<span title="' + esc(it.name) + '">' + it.emoji + '</span>' : ''; }).join('');
-    var accs = BAL.LOOKS.accessories.filter(function (x) { return x.id !== 'crown' || l.unlocked.indexOf('crown') >= 0; }).map(function (x) {
-      return '<button class="pick chip small' + (l.look.accessory === x.id ? ' on' : '') + '" data-act="do" data-fn="setAccessory"' + a('a1', x.id) + '>' + x.emoji + ' ' + x.name + '</button>';
-    }).join('');
     return head('🛍️', 'The Shops', 'Spend your coins on fun things! You have 🪙 ' + fmt(l.coins) + '.') +
       (l.age < 18 ? '<div class="tip">🐷 Earn coins from chores, birthdays, pocket money and part-time jobs.</div>' : '') +
       '<div class="pick-row">' + cats + '</div><div class="shop-grid">' + items + '</div>' +
       '<h3 class="sub">🎒 My Stuff</h3><div class="shelf">' + (stuff || '<span class="muted small">Nothing yet — go shopping!</span>') + '</div>' +
-      '<h3 class="sub">🪞 Wardrobe</h3><div class="pick-row">' + accs + '</div>';
+      '<h3 class="sub">🪞 Your look</h3><div class="info-card look-card"><div class="mini-full">' + BAL.avatar(l.look, l.age, l.stats.happy, { full: true }) + '</div><div class="grow"><b>Changing your clothes, hair and accessories is always free!</b>' +
+      '<div class="small muted">Special items (✨ Sparkly Crown, Superhero Cape, Golden Trainers) are unlocked by buying them in the Clothes department.</div></div>' +
+      btn('🪞 Change Your Look', 'changeLook', '', 'primary') + '</div>';
   }
 
   function panelHealth(l) {
@@ -648,7 +833,7 @@
     var stickers = l.achievements.map(function (id) { var x = byId(BAL.ACHIEVEMENTS, id); return x ? '<span class="sticker" title="' + esc(x.name) + '">' + x.emoji + '</span>' : ''; }).join('');
     return topbar() + '<main class="end-screen"><div class="end-card card pop">' +
       '<div class="sparkles" aria-hidden="true">✨🌟✨</div>' +
-      '<div class="end-av">' + BAL.avatar(l.look, l.age, 95, { label: l.name }) + '</div>' +
+      '<div class="end-av">' + BAL.avatar(l.look, l.age, 95, { full: true, label: l.name }) + '</div>' +
       '<h1>' + esc(l.name) + '\'s Life Story</h1>' +
       '<p class="lead">What a wonderful life! ' + esc(l.name) + ' lived to <b>' + l.age + '</b> and made so many happy memories. 💛</p>' +
       '<div class="life-stars" aria-label="' + s.stars + ' out of 5 life stars">' + '⭐'.repeat(s.stars) + '<span class="dim">' + '⭐'.repeat(5 - s.stars) + '</span></div>' +
@@ -657,7 +842,8 @@
       (highlights ? '<h3 class="sub">📸 Life highlights</h3><ul class="timeline">' + highlights + '</ul>' : '') +
       '<h2 class="section-title">What next?</h2><div class="end-actions">' +
       (kids.length ? '<div class="card next-card"><b>👶 Play as your child</b><p class="small">Carry on the family story! They get half your coins.</p><div class="btn-row">' + kids.map(function (k) { return btn(esc(k.name) + ' (' + k.age + ')', 'asChild', a('id', k.id), 'primary'); }).join('') + '</div></div>' : '') +
-      '<div class="card next-card"><b>✨ Start a brand new life</b><p class="small">Make a new character and begin again as a baby.</p>' + btn('🍼 New life', 'newLife', '', 'primary big') + '</div>' +
+      '<div class="card next-card"><b>✨ Start a brand new life</b><p class="small">Make a new character and begin again as a baby. ' + esc(l.name) + ' stays in your characters list.</p>' + btn('🍼 New life', 'newLife', '', 'primary big') + '</div>' +
+      '<div class="card next-card"><b>🧑‍🤝‍🧑 My characters</b><p class="small">Play one of your other saved characters.</p>' + btn('🧑‍🤝‍🧑 Characters', 'goChars', '', 'big') + '</div>' +
       '<div class="card next-card"><b>👥 Switch player</b><p class="small">Let someone else have a turn.</p>' + btn('👥 Players', 'goProfiles', '', 'big') + '</div>' +
       '</div></div></main>';
   }
@@ -680,7 +866,7 @@
       html: cake + '<p class="lead">You are now <b>' + l.age + '</b> year' + (l.age === 1 ? '' : 's') + ' old!</p>' +
         '<p class="gift">🎁 You got ' + esc(rep.gift.item) + (rep.gift.coins ? ' and <b>' + rep.gift.coins + ' coins</b> from your family!' : '!') + '</p>' +
         (lines ? '<ul class="year-lines">' + lines + '</ul>' : '') + moneyHtml,
-      buttons: [{ label: 'Yay! 🎈' }],
+      buttons: rep.newGroup && !rep.ended ? [{ label: 'Yay! 🎈' }, { label: '🪞 Style my new look', cls: 'pink', fn: function () { S.queue.length = 0; startLookEditor('clothes'); } }] : [{ label: 'Yay! 🎈' }],
       onOpen: function () { BAL.sound('birthday'); confetti(true); floaty('🎈'); } });
     rep.celebrations.forEach(function (c) {
       openModal({ emoji: c.e, title: esc(c.t), html: '<p class="lead">' + esc(c.d) + '</p>', buttons: [{ label: 'Hooray! 🎉' }], onOpen: function () { BAL.sound('tada'); confetti(false); } });
@@ -690,7 +876,7 @@
     showAchievements(l);
     if (rep.ended) {
       openModal({ emoji: '🌟', title: 'A Wonderful Life', cls: 'ending',
-        html: '<p class="lead">After ' + l.age + ' amazing years, ' + esc(l.name) + '\'s life story is complete.</p><p>They made so many memories, and the people who love them will remember them forever. 💛</p>',
+        html: '<p class="lead">After ' + l.age + ' amazing years, ' + esc(l.name) + '\'s life story is complete.</p><p>' + G.pronoun(l) + ' made so many memories, and the people who love ' + G.pronoun(l, 'obj') + ' will remember ' + G.pronoun(l, 'obj') + ' forever. 💛</p>',
         buttons: [{ label: 'See my life story 📖', fn: function () { endOfLife(); } }], onOpen: function () { BAL.sound('tada'); } });
       endOfLife();
     }
@@ -746,39 +932,51 @@
       case 'pickProfile': {
         Store.data.activeId = d('id'); save(); BAL.sound('click');
         var p = Store.active();
-        if (!p.life) startCreator();
-        else { S.screen = p.life.ended ? 'end' : 'game'; render(); window.scrollTo(0, 0); }
+        if (!p.chars.length) startCreator();
+        else { S.screen = 'chars'; render(); window.scrollTo(0, 0); }
         break;
       }
       case 'delProfile': {
         var pp = Store.profile(d('id'));
-        openModal({ emoji: '🗑️', title: 'Delete ' + esc(pp.name) + '?', html: '<p>This will delete this player and all their lives. This can\'t be undone!</p>',
+        openModal({ emoji: '🗑️', title: 'Delete ' + esc(pp.name) + '?', html: '<p>This will delete this player and all ' + pp.chars.length + ' of their characters. This can\'t be undone!</p>',
           buttons: [{ label: 'Yes, delete', cls: 'danger', fn: function () { Store.removeProfile(pp.id); } }, { label: 'No, keep it', cls: 'primary' }] });
         break;
       }
-      case 'look': S.creator.look[d('k')] = d('v'); BAL.sound('click'); render(); break;
-      case 'cset': S.creator[d('k')] = d('v'); BAL.sound('click'); render(); break;
-      case 'ctown': S.creator.townId = d('v'); BAL.sound('click'); render(); break;
-      case 'previewAge': S.previewAge = +d('v'); BAL.sound('click'); render(); break;
-      case 'randName': S.creator.name = G.randomName(S.creator.gender); render(); break;
-      case 'randomChar': {
-        var g = G.pick(['girl', 'boy', 'any']);
-        Object.assign(S.creator, { name: G.randomName(g), gender: g, look: G.randomLook(), townId: G.pick(BAL.TOWNS).id });
-        BAL.sound('good'); render(); break;
-      }
-      case 'startLife': {
-        var c = S.creator;
-        if (!c.name || !c.name.trim()) { var inp = document.getElementById('cname'); inp.classList.add('shake'); inp.focus(); return; }
-        var prof = Store.active();
-        prof.life = G.newLife({ name: c.name, gender: c.gender, look: c.look, townId: c.townId, familyType: c.familyType });
-        save(); S.screen = 'game'; S.tab = 'activities'; render(); window.scrollTo(0, 0);
-        BAL.sound('tada'); confetti(true);
-        var fam = prof.life.people.filter(function (x) { return ['mum', 'dad', 'grandma', 'grandpa'].indexOf(x.role) >= 0; }).map(function (x) { return x.name; });
-        openModal({ html: '<div class="welcome-av">' + BAL.avatar(prof.life.look, 0, 95) + '</div><p class="lead">Welcome to the world, <b>' + esc(prof.life.name) + '</b>!</p><p>You were born in ' + G.town(prof.life).emoji + ' <b>' + esc(G.town(prof.life).name) + '</b>' + (fam.length ? ' to ' + esc(fam.join(' and ')) : '') + '.</p>' +
-          '<ul class="year-lines"><li><span>🎈</span> Do <b>activities</b> using your ⚡ energy.</li><li><span>✅</span> Finish your <b>daily jobs</b>.</li><li><span>🎂</span> Press <b>Age Up</b> to have a birthday and grow!</li></ul>',
-          title: 'It\'s a new life! 👶', buttons: [{ label: 'Let\'s go! 🚀' }] });
+      case 'goChars': S.screen = Store.active() ? 'chars' : 'profiles'; S.ed = null; BAL.sound('click'); render(); window.scrollTo(0, 0); break;
+      case 'pickChar': {
+        var pc = Store.active();
+        pc.activeCharId = d('id'); save(); BAL.sound('click');
+        var cl = life();
+        S.tab = 'activities';
+        S.screen = cl && cl.ended ? 'end' : 'game'; render(); window.scrollTo(0, 0);
         break;
       }
+      case 'delChar': {
+        var pd = Store.active(), dc = pd.chars.find(function (c) { return c.id === d('id'); });
+        openModal({ emoji: '🗑️', title: 'Delete ' + esc(dc.name) + '?', html: '<div class="welcome-av">' + BAL.avatar(dc.look, dc.age, 40, { full: true }) + '</div><p>' + esc(dc.name) + '\'s whole saved life will be deleted. This can\'t be undone!</p>',
+          buttons: [{ label: 'Yes, delete', cls: 'danger', fn: function () { Store.removeChar(dc.id); } }, { label: 'No, keep them', cls: 'primary' }] });
+        break;
+      }
+      case 'newChar': {
+        var pn2 = Store.active();
+        if (pn2.chars.length >= MAX_CHARS) { toast('You have lots of characters! Delete one to make room.', '🙈', 'bad'); break; }
+        startCreator();
+        break;
+      }
+      case 'changeLook': startLookEditor(d('step')); break;
+      case 'edSet': edSet(d('k'), d('v'), d('locked')); break;
+      case 'edStep': S.ed.step = d('v'); BAL.sound('click'); render(); window.scrollTo({ top: window.innerWidth < 900 ? document.querySelector('.creator-options').offsetTop - 70 : 0 }); break;
+      case 'edGroup': S.ed.group = d('v'); BAL.sound('click'); render(); break;
+      case 'edName': S.ed.name = G.randomName(S.ed.gender); BAL.sound('click'); render(); break;
+      case 'edRandom': S.ed.look.outfits[S.ed.group] = G.randomOutfit(S.ed.group); BAL.sound('good'); render(); break;
+      case 'edReset': S.ed.look.outfits[S.ed.group] = G.defaultOutfit(S.ed.group, S.ed.look.fav); BAL.sound('click'); render(); break;
+      case 'edRandomAll': {
+        var rg = G.pick(BAL.IDENTITIES);
+        Object.assign(S.ed, { name: G.randomName(rg.id), gender: rg.id, pronouns: rg.pronouns, look: G.normalizeLook(G.randomLook()), townId: G.pick(BAL.TOWNS).id, familyType: G.pick(BAL.FAMILY_TYPES).id });
+        BAL.sound('good'); render(); break;
+      }
+      case 'edSave': edSave(); break;
+      case 'edCancel': S.ed = null; S.screen = 'game'; BAL.sound('click'); render(); break;
       case 'tab': S.tab = d('id'); BAL.sound('click'); render(); var pn = document.getElementById('panel'); if (pn && window.innerWidth < 900) pn.scrollIntoView({ behavior: reduced() ? 'auto' : 'smooth', block: 'start' }); break;
       case 'shopCat': S.shopCat = d('id'); BAL.sound('click'); render(); break;
       case 'ageUp': ageUp(); break;
@@ -827,9 +1025,8 @@
         break;
       }
       case 'asChild': {
-        var p2 = Store.active();
         var nl = G.continueAsChild(l, d('id'));
-        if (nl) { p2.life = nl; save(); S.screen = 'game'; S.tab = 'activities'; render(); window.scrollTo(0, 0); confetti(true); BAL.sound('tada'); toast('You are now playing as ' + nl.name + '!', '🌟', 'good'); }
+        if (nl) { Store.replaceChar(l.id, nl); S.screen = 'game'; S.tab = 'activities'; render(); window.scrollTo(0, 0); confetti(true); BAL.sound('tada'); toast('You are now playing as ' + nl.name + '!', '🌟', 'good'); }
         break;
       }
       case 'newLife': {
@@ -851,14 +1048,16 @@
       '<li><span>🏫</span> Go to school, then college or university, then get a job you love.</li>' +
       '<li><span>🪙</span> Save coins to buy things, homes and cars. Coins are pretend — no real money!</li>' +
       '<li><span>🐾</span> Adopt pets, make friends, fall in love and build a family.</li>' +
+      '<li><span>🪞</span> Tap <b>Change Your Look</b> to change clothes, hair and accessories any time — it\'s free!</li>' +
+      '<li><span>🧑‍🤝‍🧑</span> Each player can save lots of <b>characters</b>, and every character has their own life.</li>' +
       '<li><span>📖</span> Collect stickers in your Sticker Book.</li>' +
       '<li><span>🔊</span> Tap the speaker on any pop-up to hear it read aloud.</li>' +
       '</ul>', buttons: [{ label: 'Got it! 👍' }] });
   }
 
   function onInput(e) {
-    if (e.target.id === 'cname' && S.creator) {
-      S.creator.name = e.target.value;
+    if (e.target.id === 'cname' && S.ed) {
+      S.ed.name = e.target.value;
       var pv = document.getElementById('pvname'); if (pv) pv.textContent = e.target.value || '…';
     }
   }
@@ -879,7 +1078,9 @@
     $fx = document.getElementById('fx');
     Store.load();
     var p = Store.active();
-    if (p && p.life) S.screen = p.life.ended ? 'end' : 'game';
+    var cur = life();
+    if (cur) S.screen = cur.ended ? 'end' : 'game';
+    else if (p) S.screen = 'chars';
     document.addEventListener('click', function (e) { if ($modal.contains(e.target)) modalClick(e); else onClick(e); });
     document.addEventListener('input', onInput);
     document.addEventListener('keydown', onKey);

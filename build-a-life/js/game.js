@@ -40,10 +40,72 @@
   };
   G.randomLook = function () {
     var L = BAL.LOOKS;
-    return {
+    var look = {
       skin: pick(L.skins), hairColor: pick(L.hairColors.slice(0, 6)), hair: pick(L.hairStyles).id,
-      eyes: pick(L.eyes), outfit: pick(L.outfits), accessory: r() < 0.25 ? pick(['glasses', 'bow', 'cap', 'flower', 'headband']) : 'none'
+      eyes: pick(L.eyes), fav: pick(BAL.CLOTH_COLORS.slice(0, 9)), accessory: r() < 0.25 ? pick(['glasses', 'bow', 'cap', 'flower', 'headband', 'beanie']) : 'none',
+      outfits: {}
     };
+    BAL.AGE_GROUPS.forEach(function (g) { look.outfits[g.id] = G.randomOutfit(g.id); });
+    return look;
+  };
+
+  /* ---------- wardrobe ---------- */
+  var SLOTS = ['top', 'bottom', 'shoes', 'extra'];
+  G.SLOTS = SLOTS;
+  G.ageGroup = function (age) {
+    for (var i = 0; i < BAL.AGE_GROUPS.length; i++) if (age <= BAL.AGE_GROUPS[i].max) return BAL.AGE_GROUPS[i].id;
+    return 'older';
+  };
+  G.groupInfo = function (id) { return byId(BAL.AGE_GROUPS, id); };
+  G.wardrobe = function (slot, group) { return BAL.WARDROBE[slot].filter(function (it) { return it.groups.indexOf(group) >= 0; }); };
+  G.piece = function (slot, id) { return byId(BAL.WARDROBE[slot], id); };
+  G.fits = function (slot, id, group) { var it = G.piece(slot, id); return !!it && it.groups.indexOf(group) >= 0; };
+  G.defaultOutfit = function (group, fav) {
+    var d = BAL.DEFAULT_OUTFITS[group];
+    fav = fav || '#4DABF7';
+    return { top: d.top, bottom: d.bottom, shoes: d.shoes, extra: d.extra,
+      topColor: fav, bottomColor: group === 'baby' ? fav : (d.bottom === 'jeans' ? '#3B5BA5' : d.bottom === 'slacks' ? '#8D6E63' : '#3B5BA5'),
+      shoesColor: group === 'older' ? '#8D6E63' : '#FFFFFF', extraColor: '#FF6B6B' };
+  };
+  G.randomOutfit = function (group) {
+    function rnd(slot) { var list = G.wardrobe(slot, group).filter(function (x) { return !x.special; }); return pick(list).id; }
+    var C = BAL.CLOTH_COLORS;
+    return { top: rnd('top'), bottom: rnd('bottom'), shoes: rnd('shoes'), extra: r() < 0.6 ? 'none' : rnd('extra'),
+      topColor: pick(C), bottomColor: pick(C), shoesColor: pick(C), extraColor: pick(C) };
+  };
+  // Returns a complete, valid outfit for an age group without changing the look.
+  G.outfitFor = function (look, group) {
+    look = look || {};
+    var fav = look.fav || look.outfit || '#4DABF7';
+    var base = G.defaultOutfit(group, fav);
+    var o = look.outfits && look.outfits[group];
+    if (!o) return base;
+    var out = Object.assign({}, base, o);
+    SLOTS.forEach(function (slot) { if (!G.fits(slot, out[slot], group)) out[slot] = base[slot]; });
+    return out;
+  };
+  // Fills in anything missing (also upgrades saves made before outfits existed).
+  G.normalizeLook = function (look) {
+    look = look || {};
+    var L = BAL.LOOKS;
+    if (!look.fav) look.fav = look.outfit || '#4DABF7';
+    delete look.outfit;
+    if (!look.skin) look.skin = L.skins[1];
+    if (!look.eyes) look.eyes = L.eyes[0];
+    if (!look.hairColor) look.hairColor = L.hairColors[1];
+    if (!byId(L.hairStyles, look.hair)) look.hair = 'short';
+    if (!byId(L.accessories, look.accessory)) look.accessory = 'none';
+    if (!look.outfits) look.outfits = {};
+    BAL.AGE_GROUPS.forEach(function (g) { look.outfits[g.id] = G.outfitFor(look, g.id); });
+    return look;
+  };
+  G.pronoun = function (life, form) {
+    var p = byId(BAL.PRONOUNS, life.pronouns) || BAL.PRONOUNS[2];
+    return p[form || 'subj'];
+  };
+  G.isLocked = function (life, slot, id) {
+    var it = slot === 'accessory' ? byId(BAL.LOOKS.accessories, id) : G.piece(slot, id);
+    return !!(it && it.special && (life.unlocked || []).indexOf(id) < 0);
   };
   function randomGender() { return pick(['girl', 'boy']); }
 
@@ -99,6 +161,10 @@
   function addLog(life, text, emoji) { life.log.push({ age: life.age, year: life.year, t: text, e: emoji || '•' }); }
   G.addLog = addLog;
 
+  var PARENTS = ['mum', 'dad', 'parent', 'grandma', 'grandpa'];
+  G.PARENTS = PARENTS;
+  function isParent(p) { return PARENTS.indexOf(p.role) >= 0; }
+
   function needEnergy(life) { return life.energy >= 1; }
   var TIRED = 'You are out of energy ⚡ for this year! Tap "Age Up" to rest and grow.';
 
@@ -123,22 +189,28 @@
     o = o || {};
     var age = o.age || 0;
     var life = {
-      v: 1, id: uid(), name: (o.name || 'Sam').trim().slice(0, 20), gender: o.gender || 'any',
-      look: Object.assign(G.randomLook(), o.look || {}), townId: o.townId || 'maple', familyType: o.familyType || 'mumdad',
+      v: 2, id: uid(), name: (o.name || 'Sam').trim().slice(0, 20), gender: o.gender === 'any' ? 'me' : (o.gender || 'me'),
+      pronouns: o.pronouns || (byId(BAL.IDENTITIES, o.gender) || { pronouns: 'they' }).pronouns,
+      look: G.normalizeLook(JSON.parse(JSON.stringify(o.look || G.randomLook()))), created: Date.now(), townId: o.townId || 'maple', familyType: o.familyType || 'mumdad',
       age: age, year: (o.year || BAL.START_YEAR) + age, generation: o.generation || 1,
       stats: { happy: 85, health: randInt(82, 95), smarts: randInt(10, 22), fitness: randInt(10, 22) },
       coins: o.coins || 0, energy: 0, maxEnergy: 0,
       edu: { level: 0, grade: 50, course: null, clubs: [] },
       job: null, partTime: null, retired: false, pension: 0, bestJob: null,
       home: { type: 'family' }, cars: [], licence: false,
-      people: [], pets: [], inventory: [], unlocked: [], remembered: [],
+      people: [], pets: [], inventory: [], unlocked: (o.unlocked || []).slice(), remembered: [],
       sick: null, chores: [], log: [], achievements: [], newAch: [],
       lifeEnd: randInt(86, 101), ended: false, seen: {},
       flags: {},
       totals: { earned: 0, items: 0, holidays: 0, kind: 0, helper: 0, activities: 0, happySum: 0, years: 0, petsAdopted: 0, friendsMade: 0 }
     };
     if (o.stats) Object.assign(life.stats, o.stats);
-    if (life.look.accessory === 'crown') life.look.accessory = 'none';
+    // Special (shop) pieces must be bought in this life before they can be worn.
+    if (G.isLocked(life, 'accessory', life.look.accessory)) life.look.accessory = 'none';
+    BAL.AGE_GROUPS.forEach(function (g) {
+      var of = life.look.outfits[g.id];
+      ['shoes', 'extra'].forEach(function (slot) { if (G.isLocked(life, slot, of[slot])) of[slot] = BAL.DEFAULT_OUTFITS[g.id][slot]; });
+    });
 
     if (o.parents) {
       o.parents.forEach(function (p) { life.people.push(p); });
@@ -227,7 +299,7 @@
     if (cost) addCoins(life, -cost);
     applyFx(life, a.fx);
     if (a.earn) addCoins(life, randInt(a.earn[0], a.earn[1]));
-    if (a.family) life.people.forEach(function (p) { if (['mum', 'dad', 'grandma', 'grandpa', 'sibling', 'child', 'spouse', 'grandchild'].indexOf(p.role) >= 0) p.close = clamp(p.close + a.family); });
+    if (a.family) life.people.forEach(function (p) { if (['mum', 'dad', 'parent', 'grandma', 'grandpa', 'sibling', 'child', 'spouse', 'grandchild'].indexOf(p.role) >= 0) p.close = clamp(p.close + a.family); });
     if (a.friends) life.people.forEach(function (p) { if (p.role === 'friend') p.close = clamp(p.close + a.friends); });
     if (a.kind) life.totals.kind += 1;
     if (a.counter) life.totals[a.counter] = (life.totals[a.counter] || 0) + 1;
@@ -422,7 +494,7 @@
   };
 
   A.moveHome = function (life) {
-    var hasFamily = life.people.some(function (p) { return ['mum', 'dad', 'grandma', 'grandpa'].indexOf(p.role) >= 0; });
+    var hasFamily = life.people.some(isParent);
     if (!hasFamily) return no('There\'s no family home to go back to.');
     if (life.home.type === 'own') return no('Sell your home first.');
     life.home = { type: 'family' };
@@ -681,7 +753,7 @@
     if (life.age < 18) {
       if (life.flags.askedPet) return no('You already asked this year. Ask again next year!', '🙂');
       life.flags.askedPet = true;
-      var parents = life.people.filter(function (p) { return ['mum', 'dad', 'grandma', 'grandpa'].indexOf(p.role) >= 0; });
+      var parents = life.people.filter(isParent);
       var love = parents.length ? parents.reduce(function (s, p) { return s + p.close; }, 0) / parents.length : 60;
       var bigPet = k.id === 'pony';
       if (bigPet || r() > love / 100 - 0.1 + life.totals.helper * 0.03) {
@@ -743,14 +815,38 @@
     addCoins(life, -price);
     applyFx(life, it.fx);
     if (!it.consumable) life.inventory.push(id);
-    if (it.unlock && life.unlocked.indexOf(it.unlock) < 0) { life.unlocked.push(it.unlock); life.look.accessory = it.unlock; }
+    if (it.unlock) {
+      if (life.unlocked.indexOf(it.unlock) < 0) life.unlocked.push(it.unlock);
+      if (!it.slot || it.slot === 'accessory') life.look.accessory = it.unlock;
+      else life.look.outfits[G.ageGroup(life.age)][it.slot] = it.unlock;
+    }
     life.totals.items += 1;
     return ok('You bought ' + (it.consumable ? 'a ' : 'a ') + it.name + '!' + (it.unlock ? ' You are wearing it now!' : ''), it.emoji);
   };
 
   A.setAccessory = function (life, acc) {
+    if (!byId(BAL.LOOKS.accessories, acc)) return no('?');
+    if (G.isLocked(life, 'accessory', acc)) return no('Buy this in the Shop first! 🛍️', '🔒');
     life.look.accessory = acc;
     return ok('Looking great!', '🪞');
+  };
+
+  // "Change Your Look" — always free. Accepts a whole new look plus name/identity/pronouns.
+  A.setLook = function (life, look, name, gender, pronouns) {
+    var next = G.normalizeLook(JSON.parse(JSON.stringify(look || {})));
+    if (G.isLocked(life, 'accessory', next.accessory)) return no('The ' + byId(BAL.LOOKS.accessories, next.accessory).name + ' is a special item — buy it in the Shop first! 🛍️', '🔒');
+    for (var i = 0; i < BAL.AGE_GROUPS.length; i++) {
+      var of = next.outfits[BAL.AGE_GROUPS[i].id];
+      for (var j = 0; j < SLOTS.length; j++) {
+        if (G.isLocked(life, SLOTS[j], of[SLOTS[j]])) return no('The ' + G.piece(SLOTS[j], of[SLOTS[j]]).name + ' is a special item — buy it in the Shop first! 🛍️', '🔒');
+      }
+    }
+    life.look = next;
+    if (name && name.trim()) life.name = name.trim().slice(0, 20);
+    if (gender && byId(BAL.IDENTITIES, gender)) life.gender = gender;
+    if (pronouns && byId(BAL.PRONOUNS, pronouns)) life.pronouns = pronouns;
+    applyFx(life, { happy: 2 });
+    return ok('Looking fabulous! Your new look is saved. ✨', '🪞', { celebrate: true });
   };
 
   /* ---------- health ---------- */
@@ -794,7 +890,7 @@
       life.totals.helper += 1;
       applyFx(life, { happy: 5, health: 2 });
       if (life.age < 18) addCoins(life, 10);
-      life.people.forEach(function (p) { if (['mum', 'dad', 'grandma', 'grandpa'].indexOf(p.role) >= 0) p.close = clamp(p.close + 3); });
+      life.people.forEach(function (p) { if (isParent(p)) p.close = clamp(p.close + 3); });
       return ok('All daily jobs done! You\'re a super helper! ⭐' + (life.age < 18 ? ' (+10 coins)' : ''), '🌟', { allDone: true });
     }
     return ok(c.t + ' — done!', c.e);
@@ -995,7 +1091,7 @@
       p.close = clamp(p.close - decay);
       if (p.role === 'child' && p.age === 18) { rep.lines.push({ e: '🎓', t: p.name + ' is all grown up and moved out to start their own adventure!' }); addLog(life, p.name + ' moved out', '🧳'); }
       if (p.role === 'friend' && p.close <= 5) { gone.push(p); rep.notes.push({ e: '🍃', t: 'You and ' + p.name + ' drifted apart. Spend time with friends to stay close!' }); }
-      var canPass = ['mum', 'dad', 'grandma', 'grandpa', 'spouse'].indexOf(p.role) >= 0 && life.age >= 18;
+      var canPass = (isParent(p) || p.role === 'spouse') && life.age >= 18;
       if (canPass && p.age >= p.lifeEnd) {
         gone.push(p);
         life.remembered.push({ name: p.name, role: p.role, age: p.age, year: life.year });
@@ -1033,6 +1129,11 @@
       60: ['🧓', 'You can retire now if you want to.'], 65: ['🌅', 'Welcome to your golden years!'], 80: ['🎂', 'Eighty amazing years!'], 100: ['💯', 'ONE HUNDRED YEARS OLD! Incredible!']
     };
     if (M[life.age]) rep.lines.push({ e: M[life.age][0], t: M[life.age][1] });
+    if (G.ageGroup(life.age) !== G.ageGroup(life.age - 1)) {
+      var grp = G.groupInfo(G.ageGroup(life.age));
+      rep.lines.push({ e: '👕', t: 'You grew out of your old clothes! You\'re now wearing the ' + grp.name + ' collection — tap "Change Your Look" to style it.' });
+      rep.newGroup = grp.id;
+    }
     if (st !== prevStage && st === 'teen') life.edu.clubs = life.edu.clubs.slice(0, 2);
     if (life.age === 18 && life.home.type === 'family') rep.lines.push({ e: '🏡', t: 'You can keep living with your family, or move out from the Home tab.' });
 
@@ -1077,14 +1178,14 @@
   G.continueAsChild = function (life, childId) {
     var kid = G.person(life, childId);
     if (!kid) return null;
-    var parentRole = life.gender === 'girl' ? 'mum' : life.gender === 'boy' ? 'dad' : (life.gender === 'any' ? 'mum' : 'mum');
+    var parentRole = life.gender === 'girl' ? 'mum' : life.gender === 'boy' ? 'dad' : 'parent';
     var parents = [];
     var spouse = life.people.find(function (p) { return p.role === 'spouse'; });
     if (spouse) parents.push(Object.assign({}, spouse, { id: uid(), role: spouse.gender === 'girl' ? 'mum' : 'dad', close: 80 }));
     var siblings = G.children(life).filter(function (c) { return c.id !== childId; })
       .map(function (c) { return Object.assign({}, c, { id: uid(), role: 'sibling', close: 70 }); });
     var nl = G.newLife({
-      name: kid.name, gender: kid.gender, look: kid.look, townId: life.townId, age: kid.age,
+      name: kid.name, gender: kid.gender, look: kid.look, townId: life.townId, age: kid.age, unlocked: life.unlocked,
       year: life.year - kid.age, coins: Math.round(life.coins * 0.5), generation: (life.generation || 1) + 1,
       parents: parents, siblings: siblings
     });

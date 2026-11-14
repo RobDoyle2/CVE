@@ -12,7 +12,7 @@
       if (raw) {
         try {
           var d = JSON.parse(raw);
-          if (d && Array.isArray(d.profiles)) Store.data = Object.assign({ profiles: [], activeId: null, sound: true }, d);
+          if (d && Array.isArray(d.profiles)) Store.data = Store.migrate(Object.assign({ profiles: [], activeId: null, sound: true }, d));
         } catch (e) { /* corrupted save: start fresh */ }
       }
       return Store.data;
@@ -22,10 +22,53 @@
       memory = raw;
       try { if (globalThis.localStorage) localStorage.setItem(KEY, raw); } catch (e) { /* storage full or blocked */ }
     },
+    // Upgrades older saves: one life per player becomes a list of characters, and looks gain outfits.
+    migrate: function (d) {
+      d.profiles.forEach(function (p) {
+        if (!Array.isArray(p.chars)) {
+          p.chars = p.life ? [p.life] : [];
+          p.activeCharId = p.life ? p.life.id : null;
+          delete p.life;
+        }
+        if (!Array.isArray(p.hall)) p.hall = [];
+        p.chars.forEach(function (l) {
+          if (l.gender === 'any' || !l.gender) l.gender = 'me';
+          if (!l.pronouns) l.pronouns = l.gender === 'girl' ? 'she' : l.gender === 'boy' ? 'he' : 'they';
+          if (!Array.isArray(l.unlocked)) l.unlocked = [];
+          if (BAL.Game) l.look = BAL.Game.normalizeLook(l.look);
+        });
+      });
+      return d;
+    },
+    activeChar: function (p) {
+      p = p || Store.active();
+      if (!p) return null;
+      return p.chars.find(function (c) { return c.id === p.activeCharId; }) || null;
+    },
+    addChar: function (life, p) {
+      p = p || Store.active();
+      p.chars.push(life);
+      p.activeCharId = life.id;
+      Store.save();
+      return life;
+    },
+    replaceChar: function (oldId, life, p) {
+      p = p || Store.active();
+      var i = p.chars.findIndex(function (c) { return c.id === oldId; });
+      if (i < 0) p.chars.push(life); else p.chars[i] = life;
+      p.activeCharId = life.id;
+      Store.save();
+    },
+    removeChar: function (id, p) {
+      p = p || Store.active();
+      p.chars = p.chars.filter(function (c) { return c.id !== id; });
+      if (p.activeCharId === id) p.activeCharId = null;
+      Store.save();
+    },
     profile: function (id) { return Store.data.profiles.find(function (p) { return p.id === id; }) || null; },
     active: function () { return Store.profile(Store.data.activeId); },
     addProfile: function (name, emoji, color) {
-      var p = { id: BAL.Game.uid(), name: name.trim().slice(0, 16) || 'Player', emoji: emoji || '🦄', color: color || '#9775FA', created: Date.now(), life: null, hall: [] };
+      var p = { id: BAL.Game.uid(), name: name.trim().slice(0, 16) || 'Player', emoji: emoji || '🦄', color: color || '#9775FA', created: Date.now(), chars: [], activeCharId: null, hall: [] };
       Store.data.profiles.push(p);
       Store.save();
       return p;
