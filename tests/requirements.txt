@@ -1,0 +1,2 @@
+# Python packages used only by the test suites (independent check of generated .xlsx files).
+openpyxl==3.1.5

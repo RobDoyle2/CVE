@@ -64,7 +64,7 @@ python3 -m http.server 8080      # or: npm start
 
 ### Run the tests
 ```bash
-npm test                 # unit tests (Node 18+; no dependencies)
+npm test                 # unit tests (Node 18+; plus `pip install -r tests/requirements.txt` for the Excel check)
 npm run test:e2e         # browser tests (requires Playwright + Chromium)
 node tests/perf/scale.mjs 400 3000 2000   # performance check with synthetic data
 ```
