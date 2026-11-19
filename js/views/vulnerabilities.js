@@ -10,6 +10,22 @@ import { SEVERITIES, EXPLOITATION_STATUS, severityFromScore } from '../models/lo
 import { cachedAssessAll, STATUS_ORDER } from '../services/assessment-engine.js';
 import { describeExpression } from '../services/version.js';
 import { confirmAndDelete } from './shared.js';
+import { NVD_ATTRIBUTION } from '../services/nvd-feed.js';
+
+const NVD_STATUS_CLASS = { Analyzed: 'green', Modified: 'blue', 'Awaiting Analysis': 'yellow', 'Undergoing Analysis': 'yellow', Received: 'yellow', Deferred: 'grey', Rejected: 'red' };
+const nvdStatusPill = (s) => `<span class="pill ${NVD_STATUS_CLASS[s] || 'grey'}" title="NVD analysis status">${esc(s)}</span>`;
+
+function affectedProductsCard(v) {
+  const list = Array.isArray(v.affectedProducts) ? v.affectedProducts : [];
+  if (list.length < 2 && !(list[0] && list[0].source === 'CNA') && !(v.affectedProductsTotal > list.length)) return '';
+  const total = v.affectedProductsTotal || list.length;
+  return `<div class="card flush mt-2"><div class="card-header"><h3>Affected products (${list.length}${total > list.length ? ` of ${total}` : ''})</h3>
+      <span class="small muted">${total > list.length ? `Only products related to your inventory are stored; see the NVD record for all ${total}. ` : ''}Each product is checked against the software inventory</span></div>
+    <div class="table-wrap" style="max-height:360px"><table class="data"><thead><tr><th>Vendor</th><th>Product</th><th>Affected versions</th><th>Data from</th></tr></thead><tbody>
+    ${list.map((p) => `<tr><td>${esc(p.vendor)}</td><td>${esc(p.product)}</td><td class="mono small">${esc(describeExpression(p.affectedVersions || '') )}</td>
+      <td>${p.source === 'CNA' ? '<span class="tag grey" title="Supplied by the CVE Numbering Authority; not yet analysed by NVD">CNA</span>' : '<span class="tag">NVD</span>'}</td></tr>`).join('')}
+    </tbody></table></div></div>`;
+}
 import { exportButtons, bindExportButtons, downloadDataset } from './export-helpers.js';
 
 export function render(el, ctx) {
@@ -78,7 +94,7 @@ function renderList(el, ctx) {
     getRows: filtered,
     initialSort: { key: 'published', dir: -1 },
     columns: [
-      { key: 'id', label: 'CVE', render: (v) => `<a class="row-link mono" href="#/vulnerabilities/${esc(v.id)}">${esc(v.id)}</a><div class="small muted">${esc(v.title)}</div>` },
+      { key: 'id', label: 'CVE', render: (v) => `<a class="row-link mono" href="#/vulnerabilities/${esc(v.id)}">${esc(v.id)}</a>${v.nvdStatus === 'Rejected' ? ` ${nvdStatusPill('Rejected')}` : ''}${v.source === 'NVD' ? ' <span class="tag">NVD</span>' : ''}<div class="small muted">${esc(v.title)}</div>` },
       { key: 'severity', label: 'Severity', render: (v) => `${severityPill(v.severity)} <span class="small muted">${esc(v.cvssScore ?? '')}</span>`, sort: (v) => sevRank(v.severity) },
       { key: 'product', label: 'Affected product', render: (v) => `${esc(v.product)}<div class="small muted">${esc(v.vendor)}</div>` },
       { key: 'affectedVersions', label: 'Affected versions', render: (v) => `<span class="small mono">${esc(describeExpression(v.affectedVersions || ''))}</span>` },
@@ -143,7 +159,8 @@ function renderDetail(el, ctx) {
           <dt>Known exploitation</dt><dd>${esc(v.exploitationStatus)}</dd>
           <dt>Remediation</dt><dd>${esc(v.remediation || '—')}</dd>
           <dt>References</dt><dd>${(v.references || []).length ? v.references.map((r) => `<div>${extLink(r)}</div>`).join('') : '—'}</dd>
-          <dt>Source</dt><dd>${esc(v.source || '—')}</dd>
+          <dt>Source</dt><dd>${esc(v.source || '—')}${v.source === 'NVD' ? `<div class="small muted">${esc(NVD_ATTRIBUTION)}</div>` : ''}</dd>
+          ${v.nvdStatus ? `<dt>NVD analysis status</dt><dd>${nvdStatusPill(v.nvdStatus)}</dd>` : ''}
         </dl>
       </div>
       <div class="card">
@@ -157,7 +174,8 @@ function renderDetail(el, ctx) {
         </dl>
         <p class="small muted mt-2">Automated matching indicates where to investigate. It is not proof that the vulnerability is present.</p>
       </div>
-    </div>`;
+    </div>
+    ${affectedProductsCard(v)}`;
   const edit = el.querySelector('#edit');
   if (edit) edit.addEventListener('click', () => openCveForm(ctx, v, () => renderDetail(el, ctx)));
   const del = el.querySelector('#delete');

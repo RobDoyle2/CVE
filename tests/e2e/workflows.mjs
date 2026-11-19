@@ -242,9 +242,13 @@ export const workflows = [
   {
     name: 'monitoring: simulated NVD + KEV checks create/update CVEs and raise notifications',
     async run(page, { base }) {
+      // Simulate "no published feed" regardless of any local feeds/ folder.
+      await page.route('**/feeds/nvd/**', (route) => route.fulfill({ status: 404, body: 'not found' }));
       await page.goto(`${base}#/monitoring`);
       const before = await page.evaluate(() => window.__vmt.store.count('notifications'));
       await page.click('[data-check="SRC-001"]');
+      // No published feed in the test server: use the offered fallback to the demonstration feed.
+      await page.click('text=Use demonstration feed instead');
       await page.waitForSelector('#apply-ingest');
       const body = await page.locator('.modal-body').textContent();
       assert(/1 new/.test(body) && /1 changed/.test(body) && /1 unchanged/.test(body) && /1 rejected/.test(body), `plan: ${body.slice(0, 200)}`);
@@ -327,6 +331,64 @@ export const workflows = [
       await page.setInputFiles('#restore-file', file);
       await page.click('.modal-footer .btn-danger-solid');
       await page.waitForFunction(() => !!window.__vmt.store.get('applications', 'APP-007'));
+      return 'ok';
+    },
+  },
+  {
+    name: 'NVD feed: real NVD records imported from the published feed, filtered to the inventory',
+    async run(page, { base }) {
+      const { readFileSync } = await import('node:fs');
+      const { buildDayFile, buildIndex } = await import('../../js/services/nvd-feed.js');
+      const real = JSON.parse(readFileSync(new URL('../fixtures/nvd/real-sample.json', import.meta.url)));
+      const now = new Date().toISOString();
+      const day = { date: now.slice(0, 10), start: `${now.slice(0, 10)}T00:00:00.000Z`, end: `${now.slice(0, 10)}T23:59:59.999Z` };
+      const dayFile = buildDayFile(day, real.vulnerabilities, now);
+      const index = buildIndex({ generatedAt: now, retentionDays: 7, apiKeyUsed: false, days: [{ date: day.date, file: `${day.date}.json`, count: real.vulnerabilities.length, bytes: 1, windowStart: day.start }] });
+      await page.route('**/feeds/nvd/**', (route) => {
+        const body = route.request().url().endsWith('index.json') ? index : dayFile;
+        route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+      });
+      await page.goto(`${base}#/monitoring`);
+      await page.click('[data-check="SRC-001"]');
+      await page.waitForSelector('#apply-ingest');
+      const body = await page.locator('.modal-body').textContent();
+      assert(/First import/.test(body), 'first import notice');
+      const m = body.match(/(\d+) new/);
+      assert(m && Number(m[1]) === 6 && /9 not relevant to inventory|not relevant to inventory/.test(body), `plan: ${body.slice(0, 600)}`);
+      assert(/not endorsed or certified by the NVD/.test(body), 'NVD attribution shown');
+      await page.click('#apply-ingest');
+      await page.waitForSelector('.modal', { state: 'detached' });
+      const st = await page.evaluate(() => ({
+        log4shell: window.__vmt.store.get('vulnerabilities', 'CVE-2021-44228'),
+        count: window.__vmt.store.count('vulnerabilities'),
+        src: window.__vmt.store.get('monitoringSources', 'SRC-001'),
+      }));
+      assert(st.log4shell && st.log4shell.source === 'NVD' && st.log4shell.product === 'log4j', 'Log4Shell imported from NVD');
+      assert(st.count === 18, `only the 6 relevant real CVEs added, register has ${st.count}`);
+      assert(st.src.feedCheckpoint && /OK \(NVD feed/.test(st.src.lastStatus), JSON.stringify(st.src));
+      await page.goto(`${base}#/assessments/CVE-2021-44228`);
+      await page.waitForSelector('[data-finding="SW-004"]');
+      const f = await page.locator('[data-finding="SW-004"] .card-header').textContent();
+      assert(/Potentially affected/.test(f), 'Log4j 2.14.1 potentially affected');
+      await page.goto(`${base}#/vulnerabilities/CVE-2021-44228`);
+      await page.waitForSelector('text=Affected products');
+      // Second check: nothing new
+      await page.goto(`${base}#/monitoring`);
+      await page.click('[data-check="SRC-001"]');
+      await page.waitForSelector('#apply-ingest');
+      const again = await page.locator('.modal-body').textContent();
+      assert(/0 new/.test(again) && /6 unchanged/.test(again), `second check: ${again.slice(0, 600)}`);
+      return 'ok';
+    },
+  },
+  {
+    name: 'NVD feed: missing feed explains how it is produced',
+    async run(page, { base }) {
+      await page.route('**/feeds/nvd/**', (route) => route.fulfill({ status: 404, body: 'not found' }));
+      await page.goto(`${base}#/monitoring`);
+      await page.click('[data-check="SRC-001"]');
+      const msg = await page.locator('.modal-body').textContent();
+      assert(/could not be read/.test(msg) && /GitHub Actions/.test(msg) && /npm run fetch:nvd/.test(msg), msg);
       return 'ok';
     },
   },

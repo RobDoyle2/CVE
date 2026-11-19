@@ -82,3 +82,14 @@ Relative paths only, hash routing (deep links survive refresh), `.nojekyll`, no 
 5. **Roles in the browser.** Must be replaced by IdP groups mapped to backend authorisation on every API call.
 6. **CSP `connect-src 'self'`.** If the API is on a different origin, add it explicitly (prefer same origin behind CloudFront `/api/*`).
 7. **Hash routing** is fine on CloudFront; optionally move to history routing with a CloudFront function for rewrites.
+
+## Update: real NVD data (NVD CVE API 2.0 via GitHub Actions)
+
+| Item | Status |
+|---|---|
+| Real CVE data | NVD changes fetched by `scripts/fetch-nvd.mjs` in GitHub Actions every 6 hours, published as same-site JSON; imported from Monitoring Sources. Verified end to end against the live NVD API (2 days, 6,344 CVEs: 259 relevant to the sample inventory, import in under 1 s). |
+| Secrets | Optional `NVD_API_KEY` is an Actions secret; never written to the feed (unit-tested). |
+| CORS/CSP | Not needed: the browser reads its own origin. (NVD does send `Access-Control-Allow-Origin: *`, verified, but a key could not be used safely from the browser.) |
+| Data model | CVEs now hold every affected product (`affectedProducts`), NVD analysis status and CNA fallback data; the engine evaluates each product. Previously only the first product was kept (for Log4Shell that was a Siemens firmware rather than Apache Log4j). |
+| Matching fixes found with real data | Explicit CPE release versions (e.g. OpenShift `4.12`) were dropped and would have been compared exactly; now treated as release lines. Vendor names repeated in product names are handled, without cross-vendor generic matches (e.g. "Debian Linux" vs "Amazon Linux"). |
+| Open | Browser storage limit (~2,000 CVEs); no historical backfill; CNA RPM/package versions need verification; CISA KEV live feed next. |

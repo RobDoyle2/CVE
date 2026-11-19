@@ -45,7 +45,8 @@ export class MemoryProvider {
  * export/import (Settings) to move data, and a backend provider for real use.
  */
 export class LocalStorageProvider {
-  constructor({ storage, key, seed, schemaVersion }) {
+  constructor({ storage, key, seed, schemaVersion, migrate = null }) {
+    this.migrate = migrate;
     this.storage = storage;
     this.key = key;
     this.seed = seed;
@@ -60,6 +61,7 @@ export class LocalStorageProvider {
         if (snap && snap.schemaVersion === this.schemaVersion && snap.collections) {
           // Ensure newly introduced collections exist
           for (const c of COLLECTIONS) if (!Array.isArray(snap.collections[c])) snap.collections[c] = [];
+          if (this.migrate && this.migrate(snap).length) await this.applyChanges([{ type: 'migrate' }], snap);
           return snap;
         }
       }
@@ -67,6 +69,7 @@ export class LocalStorageProvider {
       this.lastError = err;
     }
     const seeded = clone(this.seed());
+    if (this.migrate) this.migrate(seeded);
     await this.applyChanges([], seeded);
     return seeded;
   }
@@ -85,6 +88,11 @@ export class LocalStorageProvider {
     return this.load();
   }
   describe() { return 'Browser local storage (this browser only)'; }
+  /** Approximate usage: browsers typically allow about 5 million characters per site. */
+  usage(snapshot) {
+    const used = JSON.stringify(snapshot).length;
+    return { used, limit: 5000000, fraction: used / 5000000 };
+  }
 }
 
 /**

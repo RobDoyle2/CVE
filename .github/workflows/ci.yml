@@ -15,7 +15,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Unit tests (no dependencies)
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install test dependencies (openpyxl verifies generated Excel files)
+        run: python -m pip install -r tests/requirements.txt
+
+      - name: Unit tests
         run: npm test
       - name: Install test-only browser tooling
         run: |

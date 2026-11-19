@@ -4,6 +4,7 @@ import { DataStore, LocalStorageProvider, MemoryProvider } from './core/store.js
 import { Session } from './core/session.js';
 import { Router } from './core/router.js';
 import { buildSampleSnapshot } from './data/sample-data.js';
+import { applyMigrations } from './data/migrations.js';
 import { icons } from './ui/icons.js';
 import { esc } from './ui/dom.js';
 import { toast } from './ui/toast.js';
@@ -53,7 +54,7 @@ async function main() {
   const storage = safeStorage();
   const seed = () => buildSampleSnapshot(APP_CONFIG.schemaVersion);
   const provider = storage
-    ? new LocalStorageProvider({ storage, key: APP_CONFIG.storageKey, seed, schemaVersion: APP_CONFIG.schemaVersion })
+    ? new LocalStorageProvider({ storage, key: APP_CONFIG.storageKey, seed, schemaVersion: APP_CONFIG.schemaVersion, migrate: applyMigrations })
     : new MemoryProvider({ seed, schemaVersion: APP_CONFIG.schemaVersion });
 
   let session;
