@@ -338,12 +338,23 @@ def pull_github(ctx):
     run_start = store.now_iso()
     since = ctx.since()[:10]
     url = ctx.url or "https://api.github.com/advisories"
-    params = {"modified": since + "..*", "per_page": 10 if ctx.test else 100,
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    # GitHub rejects "DATE..*" (HTTP 422, seen live), so ">=DATE" is used,
+    # with a closed range as a fallback.
+    date_forms = [">=" + since, f"{since}..{today}"]
+    params = {"modified": date_forms.pop(0), "per_page": 10 if ctx.test else 100,
               "sort": "updated", "direction": "asc"}
     max_pages = 1 if ctx.test else (60 if token else 15)
     page, newest = 0, ""
     while url and page < max_pages:
-        r, data = get_json(ctx, url, params=params, headers=headers, retries=1)
+        try:
+            r, data = get_json(ctx, url, params=params, headers=headers, retries=1)
+        except AdapterError as e:
+            if page == 0 and "HTTP 422" in str(e) and date_forms:
+                params["modified"] = date_forms.pop(0)
+                ctx.log("retrying with date range " + params["modified"])
+                continue
+            raise
         if not isinstance(data, list):
             raise AdapterError(f"unexpected GitHub response: {str(data)[:200]}")
         for a in data:

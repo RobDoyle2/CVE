@@ -144,7 +144,13 @@ def test_github_pagination(con):
     assert ctx.saved == 2 and sess.calls[1][0].endswith("after=X")
     rows = dict(con.execute("SELECT vuln_id, severity_label FROM vulns").fetchall())
     assert rows == {"GHSA-aaaa-bbbb-cccc": "MEDIUM", "GHSA-2222-2222-2222": "CRITICAL"}
-    assert sess.calls[0][1]["params"]["modified"].endswith("..*")
+    assert sess.calls[0][1]["params"]["modified"].startswith(">=")
+
+
+def test_github_falls_back_on_rejected_date(con):
+    ctx, sess = ctx_for(con, "github", [FakeResp({"message": "The date input is invalid."}, status=422), FakeResp([GH_ADV])])
+    adapters.pull_github(ctx)
+    assert ctx.saved == 1 and ".." in sess.calls[1][1]["params"]["modified"]
 
 
 def test_redhat_severity_mapping(con):

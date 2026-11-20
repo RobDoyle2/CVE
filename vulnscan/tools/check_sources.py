@@ -75,6 +75,10 @@ check("GitHub advisories", "https://api.github.com/advisories", (),
        "vulnerabilities", "identifiers", "cvss_severities"), headers=gh_hdr,
       params={"modified": (NOW - timedelta(days=2)).strftime("%Y-%m-%d") + "..*", "per_page": 5,
               "sort": "updated", "direction": "asc"})
+for form in (">=" + (NOW - timedelta(days=2)).strftime("%Y-%m-%d"),
+             (NOW - timedelta(days=2)).strftime("%Y-%m-%d") + ".." + NOW.strftime("%Y-%m-%d")):
+    check("GitHub modified " + form, "https://api.github.com/advisories", (), ("ghsa_id", "updated_at"),
+          headers=gh_hdr, params={"modified": form, "per_page": 5, "sort": "updated", "direction": "asc"})
 check("Red Hat", "https://access.redhat.com/hydra/rest/securitydata/cve.json", (),
       ("CVE", "severity", "public_date", "bugzilla_description", "affected_packages", "resource_url"),
       params={"after": (NOW - timedelta(days=7)).strftime("%Y-%m-%d"), "per_page": 5, "page": 1})
@@ -84,6 +88,17 @@ for label, params in (("EUVD search by update date", {"fromUpdatedDate": since, 
     check(label, "https://euvdservices.enisa.europa.eu/api/search", ("items",),
           ("id", "description", "datePublished", "dateUpdated", "baseScore", "aliases", "enisaIdProduct"),
           items=lambda d: d.get("items") if isinstance(d, dict) else d, params=dict(params, size=5, page=0))
+# Does the EUVD search really filter by date? Compare totals for different ranges.
+euvd_totals = {}
+for label, params in (("no dates", {}), ("updated last 1 day", {"fromUpdatedDate": (NOW - timedelta(days=1)).strftime("%Y-%m-%d"), "toUpdatedDate": NOW.strftime("%Y-%m-%d")}),
+                      ("updated last 7 days", {"fromUpdatedDate": (NOW - timedelta(days=7)).strftime("%Y-%m-%d"), "toUpdatedDate": NOW.strftime("%Y-%m-%d")}),
+                      ("published last 7 days", {"fromDate": (NOW - timedelta(days=7)).strftime("%Y-%m-%d"), "toDate": NOW.strftime("%Y-%m-%d")})):
+    try:
+        j = S.get("https://euvdservices.enisa.europa.eu/api/search", params=dict(params, size=3, page=0), timeout=60).json()
+        euvd_totals[label] = (j.get("total"), [(i.get("id"), i.get("datePublished"), i.get("dateUpdated")) for i in j.get("items", [])])
+    except Exception as e:  # noqa: BLE001
+        euvd_totals[label] = str(e)[:200]
+results.append({"source": "EUVD totals by date range", "result": "info", "detail": json.dumps(euvd_totals)[:1500]})
 for ep in ("lastvulnerabilities", "exploitedvulnerabilities", "criticalvulnerabilities"):
     check("EUVD " + ep, "https://euvdservices.enisa.europa.eu/api/" + ep, (),
           ("id", "description", "datePublished", "dateUpdated", "baseScore", "aliases"))
@@ -105,12 +120,27 @@ for name, url, kind in (("AWS bulletins RSS", "https://aws.amazon.com/security/s
         else:
             links = sorted(set(re.findall(r'href="([^"#]*(?:alert|advisor|cpu[a-z]{3}\d{4})[^"]*)"', r.text, re.I)))[:25]
             line["matching_links"] = links
+            if "ncsc" in url:
+                line["all_links"] = sorted(set(re.findall(r'href="([^"#]+)"', r.text)))[:120]
+                line["feeds"] = re.findall(r'<link[^>]+(?:rss|atom)[^>]*>', r.text, re.I)[:5]
+                line["page_start"] = r.text[:600]
             line["cve_ids_on_page"] = len(set(re.findall(r"CVE-\d{4}-\d{4,}", r.text)))
             line["result"] = "ok" if r.status_code < 400 else "FAIL"
     except Exception as e:  # noqa: BLE001
         line["result"] = "FAIL"
         line["detail"] = f"{e.__class__.__name__}: {e}"[:300]
     results.append(line)
+
+# Probe likely NCSC Ireland alert addresses (status code and CVE IDs found).
+probe = {}
+for path in ("alerts/", "advisories/", "news/", "feed/", "rss.xml", "index.xml", "feed.xml", "emailsfrom/", "pdfs/"):
+    try:
+        r = S.get("https://www.ncsc.gov.ie/" + path, timeout=30)
+        probe[path] = (r.status_code, r.headers.get("Content-Type", "")[:40],
+                       len(set(re.findall(r"CVE-\d{4}-\d{4,}", r.text))), len(r.text))
+    except Exception as e:  # noqa: BLE001
+        probe[path] = str(e)[:100]
+results.append({"source": "NCSC Ireland address probe", "result": "info", "detail": json.dumps(probe)})
 
 for line in results:
     print(f"{line['result']:6} {line['source']:32} HTTP {line.get('http', '-')}  items={line.get('items', '-')}"
