@@ -30,6 +30,10 @@ known-exploited items, then critical, then high. It is a desktop program for Win
 
 `%APPDATA%\VulnScan\`: `vulns.db` (SQLite: the common record table `vulns` keyed on source + ID, plus `last_run`), `settings.json`, `secrets.json` (encrypted keys) and `error.log` if startup ever fails.
 
+## On your phone (web version)
+
+A read-only web version is published with the repository's GitHub Pages site at **https://robdoyle2.github.io/CVE/vulnscan/**. GitHub collects all the public sources every 6 hours, and the page filters in the browser. It has the same filters and ranking, a **Download for Excel (CSV)** button for the current view and a ready-made 7-day PDF report. There is no Scan button or Settings. It is built by `tools/build_web.py` (page files in `web/`) from the *Publish site with NVD feed* workflow. Like the rest of that site it is public, and it holds public data only.
+
 ## Sources
 
 | Source | Default | How it is read |

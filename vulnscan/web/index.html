@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>VulnScan</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <img src="icon.svg" alt="" width="36" height="36">
+    <div>
+      <h1>VulnScan</h1>
+      <p class="tagline">Today's security vulnerabilities, ranked by what matters most.</p>
+    </div>
+  </div>
+</header>
+<main>
+  <div class="scanbar">
+    <div class="scan-side">
+      <p id="summary" class="summary">Loading the latest results…</p>
+      <p id="updated" class="muted small"></p>
+    </div>
+  </div>
+  <details class="sources-box">
+    <summary class="small">Sources checked <span id="srcState" class="muted"></span></summary>
+    <ul id="progress" class="progress"></ul>
+    <p class="muted small">Collected automatically every 6 hours from public feeds. Public data only.</p>
+  </details>
+
+  <div class="filters" role="search">
+    <input id="fQ" type="search" placeholder="Search products or words in the summary" aria-label="Search">
+    <label>Time window
+      <select id="fDays"><option value="7">Last 7 days</option><option value="14">Last 14 days</option><option value="30">Last 30 days</option></select>
+    </label>
+    <label>Severity
+      <select id="fSev"><option value="critical">Critical only</option><option value="high" selected>Critical and high</option><option value="all">Everything</option></select>
+    </label>
+    <label>Source
+      <select id="fSrc"><option value="">All sources</option></select>
+    </label>
+    <label class="check"><input id="fExp" type="checkbox"> Known exploited only</label>
+    <button id="clearBtn" class="link-btn">Clear filters</button>
+  </div>
+
+  <div class="tablebar">
+    <span id="count" class="count">Showing 0 of 0</span>
+    <span class="spacer"></span>
+    <button id="csvBtn" class="btn">Download for Excel (CSV)</button>
+    <a class="btn" href="report.pdf" download>7-day PDF report</a>
+  </div>
+
+  <div class="table-wrap">
+    <table id="results">
+      <thead><tr>
+        <th>ID</th><th>Source</th><th>Exploited</th><th>Severity</th><th class="num">Score</th>
+        <th>Affected product</th><th>Summary</th><th>Published</th><th>Link</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+    <p id="empty" class="empty" hidden></p>
+    <p class="center"><button id="moreBtn" class="btn" hidden>Show more</button></p>
+  </div>
+</main>
+<div id="toast" class="toast" role="status" hidden></div>
+<script src="web.js"></script>
+</body>
+</html>

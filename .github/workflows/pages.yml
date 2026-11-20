@@ -12,7 +12,7 @@ name: Publish site with NVD feed
 
 on:
   push:
-    branches: [main]
+    branches: [main, ccr-77a9b4a6-4xmbio]
   schedule:
     - cron: '23 */6 * * *'   # every 6 hours (UTC); scheduled runs use the default branch
   workflow_dispatch:
@@ -34,7 +34,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -63,6 +63,18 @@ jobs:
           NVD_RETENTION_DAYS: ${{ github.event.inputs.retention_days || vars.NVD_RETENTION_DAYS || '7' }}
         # A failure stops the job, so the previously deployed site and feed stay live.
         run: node scripts/fetch-nvd.mjs --out _site/feeds/nvd
+
+      - name: Build VulnScan web version (/vulnscan/)
+        # Collects all public sources and writes the phone-friendly page.
+        # If it fails, the rest of the site is still published.
+        continue-on-error: true
+        timeout-minutes: 25
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+        run: |
+          python -m pip install -r vulnscan/requirements.txt
+          python vulnscan/tools/build_web.py _site/vulnscan
 
       - uses: actions/configure-pages@v5
 

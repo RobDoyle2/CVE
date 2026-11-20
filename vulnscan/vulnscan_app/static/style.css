@@ -153,3 +153,8 @@ tr.exploited td { background: var(--exploited-bg); }
   .src-main .s-url, .src-main .src-btns { grid-column: 1 / -1; }
   .src .s-note, .s-result, .s-mapping { margin-left: 0; }
 }
+
+/* web version */
+.sources-box { margin-top: 12px; }
+.sources-box summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
+a.btn { text-decoration: none; color: var(--text); display: inline-block; }
