@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>VulnScan</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <img src="icon.svg" alt="" width="36" height="36">
+    <div>
+      <h1 id="appTitle">VulnScan</h1>
+      <p id="tagline" class="tagline">Today's security vulnerabilities, ranked by what matters most.</p>
+    </div>
+  </div>
+  <nav class="tabs" role="tablist">
+    <button role="tab" id="tabMain" aria-selected="true" data-view="main">Results</button>
+    <button role="tab" id="tabSettings" aria-selected="false" data-view="settings">Settings</button>
+  </nav>
+</header>
+
+<main>
+<!-- ============================ MAIN SCREEN ============================ -->
+<section id="viewMain">
+  <div class="scanbar">
+    <button id="scanBtn" class="scan-btn">Scan</button>
+    <div class="scan-side">
+      <p id="summary" class="summary">No scan yet. Press Scan to collect today's vulnerabilities.</p>
+      <p id="lastScan" class="muted small"></p>
+    </div>
+  </div>
+  <ul id="progress" class="progress" hidden></ul>
+
+  <div class="filters" role="search">
+    <input id="fQ" type="search" placeholder="Search products or words in the summary" aria-label="Search">
+    <label>Time window
+      <select id="fDays"><option value="7">Last 7 days</option><option value="14">Last 14 days</option><option value="30">Last 30 days</option></select>
+    </label>
+    <label>Severity
+      <select id="fSev"><option value="critical">Critical only</option><option value="high" selected>Critical and high</option><option value="all">Everything</option></select>
+    </label>
+    <label>Source
+      <select id="fSrc"><option value="">All sources</option></select>
+    </label>
+    <label class="check"><input id="fExp" type="checkbox"> Known exploited only</label>
+    <button id="clearBtn" class="link-btn">Clear filters</button>
+  </div>
+
+  <div class="tablebar">
+    <span id="count" class="count">Showing 0 of 0</span>
+    <span class="spacer"></span>
+    <button id="xlsxBtn" class="btn">Export Excel</button>
+    <button id="pdfBtn" class="btn">Export PDF</button>
+  </div>
+
+  <div class="table-wrap">
+    <table id="results">
+      <thead><tr>
+        <th>ID</th><th>Source</th><th>Exploited</th><th>Severity</th><th class="num">Score</th>
+        <th>Affected product</th><th>Summary</th><th>Published</th><th>Link</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+    <p id="empty" class="empty" hidden></p>
+    <p id="more" class="muted small center" hidden></p>
+  </div>
+</section>
+
+<!-- ============================ SETTINGS ============================ -->
+<section id="viewSettings" hidden>
+  <div class="settings-head">
+    <h2>Settings</h2>
+    <span id="saveState" class="muted small" aria-live="polite"></span>
+  </div>
+
+  <div class="card">
+    <h3>Sources</h3>
+    <p class="muted small">Switch sources on or off, change their web address, or add your own. Test fetches a source once and tells you whether it worked. Changes save automatically.</p>
+    <div id="sources" class="sources"></div>
+    <div class="row-actions">
+      <button id="addSrc" class="btn">Add source</button>
+      <span class="spacer"></span>
+      <button id="resetBtn" class="btn danger-outline">Reset to defaults</button>
+    </div>
+  </div>
+
+  <div class="card" id="keysCard">
+    <h3>API keys</h3>
+    <p class="muted small">Stored securely on this computer (encrypted with your Windows account) and never shown in full. Both are optional but make scans faster.</p>
+    <div class="key-row" data-name="NVD_API_KEY">
+      <label>NVD API key <span class="hint"></span></label>
+      <div class="inline"><input type="password" autocomplete="off" placeholder="Paste key"><button class="btn save-key">Save</button><button class="link-btn clear-key">Remove</button></div>
+      <p class="muted small">Free from nvd.nist.gov &rarr; Developers &rarr; Request an API key.</p>
+    </div>
+    <div class="key-row" data-name="GITHUB_TOKEN">
+      <label>GitHub token <span class="hint"></span></label>
+      <div class="inline"><input type="password" autocomplete="off" placeholder="Paste token"><button class="btn save-key">Save</button><button class="link-btn clear-key">Remove</button></div>
+      <p class="muted small">GitHub &rarr; Settings &rarr; Developer settings &rarr; Personal access tokens. No permissions needed.</p>
+    </div>
+  </div>
+
+  <div class="card" id="phoneCard">
+    <h3>Use on your phone</h3>
+    <p class="muted small">Lets a phone on the same home Wi-Fi open this app while it is running on this computer. The phone needs the private link below (scan the QR code). Data still stays on your own network. Windows may ask whether to allow VulnScan through the firewall: allow it on private networks only.</p>
+    <label class="check"><input id="phoneToggle" type="checkbox"> Allow my phone to connect</label>
+    <div id="phoneInfo" class="phone-info" hidden>
+      <div id="qr" class="qr"></div>
+      <div>
+        <p class="small break" id="phoneUrl"></p>
+        <button id="newKey" class="link-btn">Make a new link (old one stops working)</button>
+      </div>
+    </div>
+    <p id="phoneErr" class="error small" hidden></p>
+  </div>
+
+  <div class="card">
+    <h3>Display</h3>
+    <label>App name <input id="sTitle" maxlength="60"></label>
+    <label>Description line <input id="sTagline" maxlength="200"></label>
+    <label>First scan looks back (days)
+      <select id="sDays"><option>7</option><option>14</option><option selected>30</option><option>60</option><option>90</option></select>
+    </label>
+  </div>
+
+  <div class="card" id="quitCard">
+    <h3>Close the app</h3>
+    <p class="muted small">VulnScan also closes by itself a few minutes after you close its window (unless phone access is on).</p>
+    <button id="quitBtn" class="btn">Quit VulnScan</button>
+    <p class="muted small" id="about"></p>
+  </div>
+</section>
+</main>
+
+<template id="srcTpl">
+  <div class="src">
+    <div class="src-main">
+      <label class="switch" title="On or off"><input type="checkbox" class="s-enabled"><span></span></label>
+      <input class="s-name" aria-label="Name" maxlength="80">
+      <select class="s-type" aria-label="Type"><option value="json">JSON API</option><option value="rss">RSS feed</option><option value="web">Web page</option></select>
+      <input class="s-url" aria-label="URL" placeholder="https://…">
+      <div class="src-btns">
+        <button class="btn s-test">Test</button>
+        <button class="link-btn s-adv">Mapping</button>
+        <button class="icon-btn s-del" title="Delete" aria-label="Delete">&#x2715;</button>
+      </div>
+    </div>
+    <p class="s-note muted small"></p>
+    <p class="s-result small" hidden></p>
+    <div class="s-mapping" hidden></div>
+  </div>
+</template>
+
+<div id="toast" class="toast" role="status" hidden></div>
+<script src="app.js"></script>
+</body>
+</html>

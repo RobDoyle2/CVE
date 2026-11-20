@@ -4,3 +4,8 @@ test-results/
 .DS_Store
 feeds/
 _site/
+vulnscan/build/
+vulnscan/dist/
+__pycache__/
+.pytest_cache/
+vulnscan/selftest/
