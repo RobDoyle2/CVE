@@ -487,11 +487,14 @@ def pull_euvd(ctx):
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     size = 10 if ctx.test else 100
     used = None
-    # The search endpoint takes a date range; it is tried by update date first,
-    # then publish date. If neither works the three fixed "latest" lists are used.
-    for date_from, date_to in (("fromUpdatedDate", "toUpdatedDate"), ("fromDate", "toDate")):
+    # The search endpoint takes a date range. Publish date is used: checked live,
+    # EUVD re-dates thousands of old entries a day (11,492 "updated" in a week vs
+    # 4,356 newly published), so update date mostly brings back old items.
+    # If search fails, the three fixed "latest" lists are used instead.
+    max_pages = 150
+    for date_from, date_to in (("fromDate", "toDate"), ("fromUpdatedDate", "toUpdatedDate")):
         try:
-            for page in range(0, 100):
+            for page in range(0, max_pages):
                 _, data = get_json(ctx, base + "search", retries=1,
                                    params={date_from: since, date_to: today, "size": size, "page": page})
                 items = _euvd_items(data)
@@ -502,6 +505,8 @@ def pull_euvd(ctx):
                 if ctx.test or len(items) < size:
                     break
                 time.sleep(0.3)
+            else:
+                ctx.log(f"stopped at {max_pages * size:,} items - the rest are skipped")
             used = date_from
             break
         except AdapterError as e:

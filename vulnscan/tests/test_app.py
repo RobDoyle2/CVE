@@ -173,7 +173,7 @@ def test_euvd_search(con):
     adapters.pull_euvd(ctx)
     r = con.execute("SELECT aliases, severity_label, published, affected FROM vulns WHERE vuln_id='EUVD-2026-5555'").fetchone()
     assert r[0] == "CVE-2026-5555, GHSA-x" and r[1] == "CRITICAL" and r[2] == "2026-11-18T15:04:05" and "Router" in r[3]
-    assert "search" in sess.calls[0][0] and "fromUpdatedDate" in sess.calls[0][1]["params"]
+    assert "search" in sess.calls[0][0] and "fromDate" in sess.calls[0][1]["params"]
     assert con.execute("SELECT exploited FROM vulns WHERE vuln_id='EUVD-2026-6666'").fetchone()[0] == 1
 
 

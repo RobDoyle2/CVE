@@ -38,10 +38,10 @@ known-exploited items, then critical, then high. It is a desktop program for Win
 | CISA Known Exploited | on | The full KEV JSON file each scan. Every matching CVE from any source is flagged **exploited** |
 | GitHub Advisory Database | on | `GET /advisories`, by modified date, oldest first, page links followed |
 | Red Hat Security Data | on | `cve.json?after=` by public date. "Important" is shown as HIGH, "Moderate" as MEDIUM |
-| EU Vulnerability Database (ENISA) | on | `/api/search` by date range, falling back to the latest/critical/exploited lists |
+| EU Vulnerability Database (ENISA) | on | `/api/search` by publish date (EUVD re-dates thousands of old entries daily), falling back to the latest/critical/exploited lists |
 | OSV | off | Placeholder: list packages as `ecosystem:name@version` under Mapping |
 | Oracle Critical Patch Update | off | Reads the latest quarterly update's risk matrices (default section: Java) |
-| NCSC Ireland | off | Placeholder: records CVE IDs found on the page |
+| NCSC Ireland | off | Placeholder: records the CVE IDs mentioned on ncsc.gov.ie/news/ (179 found in the live check) |
 | AWS Security Bulletins | off | Placeholder: RSS feed |
 
 ## Command line (the original scripts)

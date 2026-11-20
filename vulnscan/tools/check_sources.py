@@ -73,7 +73,7 @@ if os.environ.get("GITHUB_TOKEN"):
 check("GitHub advisories", "https://api.github.com/advisories", (),
       ("ghsa_id", "cve_id", "summary", "description", "severity", "published_at", "updated_at", "html_url",
        "vulnerabilities", "identifiers", "cvss_severities"), headers=gh_hdr,
-      params={"modified": (NOW - timedelta(days=2)).strftime("%Y-%m-%d") + "..*", "per_page": 5,
+      params={"modified": ">=" + (NOW - timedelta(days=2)).strftime("%Y-%m-%d"), "per_page": 5,
               "sort": "updated", "direction": "asc"})
 for form in (">=" + (NOW - timedelta(days=2)).strftime("%Y-%m-%d"),
              (NOW - timedelta(days=2)).strftime("%Y-%m-%d") + ".." + NOW.strftime("%Y-%m-%d")):
@@ -106,7 +106,7 @@ check("OSV", "https://api.osv.dev/v1/vulns/GHSA-j8r2-6x86-q33q", ("id", "aliases
       (), items=lambda d: [d])
 # Feeds and pages
 for name, url, kind in (("AWS bulletins RSS", "https://aws.amazon.com/security/security-bulletins/rss/feed/", "rss"),
-                        ("NCSC Ireland home", "https://www.ncsc.gov.ie/", "web"),
+                        ("NCSC Ireland news", "https://www.ncsc.gov.ie/news/", "web"),
                         ("Oracle security alerts", "https://www.oracle.com/security-alerts/", "web")):
     line = {"source": name, "url": url}
     try:
