@@ -12,7 +12,7 @@ name: Publish site with NVD feed
 
 on:
   push:
-    branches: [main, ccr-77a9b4a6-4xmbio]
+    branches: [main]
   schedule:
     - cron: '23 */6 * * *'   # every 6 hours (UTC); scheduled runs use the default branch
   workflow_dispatch:
